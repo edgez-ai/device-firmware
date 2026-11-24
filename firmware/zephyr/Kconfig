@@ -33,6 +33,15 @@ config EZ_CAM_SENSORS
 	bool "On-demand IMU and battery voltage LwM2M objects"
 	default n
 
+config EZ_CAM_WNM_PARK_PINS
+	bool "Park HaLow host signal pins during WNM chip powerdown"
+	depends on EZ_CAM_WNM_SLEEP && SOC_NRF54L15_CPUAPP && PM_DEVICE
+	default n
+	help
+	  Experimental WNM-only GPIO isolation. Suspend SPI, disconnect its data
+	  pins and IRQ/BUSY inputs without pulls, and keep RESETn/WAKE low and
+	  CS high. Restore before SDK wake; the module supply remains enabled.
+
 config EZ_CAM_VOLTAGE_SCALE_PPM
 	int "Battery voltage calibration scale, parts per million"
 	depends on EZ_CAM_SENSORS

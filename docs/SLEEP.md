@@ -95,6 +95,45 @@ release and released on restart. Hardware inspection confirmed reset and WAKE
 outputs LOW, camera power off and SPIM00 disabled during WNM. The operator's
 subsequent disconnected-SWD measurement confirmed approximately 1 mW.
 
+## Experimental WNM-only GPIO parking
+
+Build `pio run -e ez-cam01-wnm-pins` from `firmware/` for the BLE camera
+profile with `CONFIG_EZ_CAM_WNM_PARK_PINS=y`. The ordinary profiles leave this
+option off for an A/B comparison. No module supply switching is performed.
+
+Parking runs only after successful SDK WNM chip powerdown, when the SDK has
+stopped its transport/PS threads and disabled IRQ/BUSY interrupts. It explicitly
+suspends the SPI controller if active, then applies these host pin states:
+
+| Signal | Pin | During WNM |
+| --- | --- | --- |
+| RESETn | P1.04 | Output LOW, no pull, input buffer disconnected |
+| WAKE | P1.05 | Output LOW, no pull, input buffer disconnected |
+| CS | P1.07 | Output HIGH/inactive, no pull, input buffer disconnected |
+| SCK / MOSI / MISO | P2.01 / P2.02 / P2.04 | High impedance, no pull, input buffer disconnected |
+| IRQ / BUSY | P1.06 / P1.10 | High impedance, no pull, input buffer disconnected |
+| Module supply EN | P2.00 | Unchanged: HIGH |
+
+Before SDK wake, restore the SPI controller if this code suspended it, and
+restore the saved GPIO output latches and complete PIN_CNF values. Nordic
+GPIOTE allocations are not reconfigured; SDK startup re-enables its interrupts.
+If parking fails, undo the already negotiated WNM entry and restore IP TX.
+SPI resume failure restores the GPIO configuration and IP TX but reports an
+error rather than invoking SDK restoration on an unavailable controller.
+
+Passive SWD diagnostic array `halow_wnm_pin_diag` records parked state, park
+count, restore count and last SPI PM error. There is no additional logging,
+polling or watchdog wake during sleep. Native tests exercise pin isolation,
+exact restoration, PM ownership, failure cleanup and SDK call ordering.
+
+For power comparison, disconnect SWD and cold-boot before executing a sleep
+cycle. Measure the middle plateau under the same voltage, board/peripheral
+state and meter setup as the approximately 1 mW baseline. Firmware build and
+GPIO state verification alone do not establish a power improvement.
+The operator's comparison found no measurable reduction: the parked-pin image
+still measured approximately 1 mW during WNM. The 550 uW no-HaLow comparison
+therefore remains unexplained by this GPIO experiment.
+
 ## Required SDK exit fix
 
 The EdgeZ SDK patch clears the chip's WNM long-sleep flag after hardware

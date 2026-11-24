@@ -118,6 +118,8 @@ photo. No SPI input-gating/high-output experiment is imported.
 `31026`. It runs only after Execute; normal standby continues to use DTIM10.
 The [connection watchdog](docs/CONNECTION-WATCHDOG.md) checks native LwM2M ACKs
 during normal operation and after wake, with staged reconnect recovery.
+The experimental `ez-cam01-wnm-pins` environment adds WNM-only signal-pin
+parking for a power comparison; see the [pin-state table](docs/SLEEP.md#experimental-wnm-only-gpio-parking).
 
 The original carrier measured about 3 mW at the flat sleep floor after a
 cold boot with SWD disconnected, before any photo. That is inherited source

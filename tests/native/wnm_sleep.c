@@ -10,6 +10,19 @@ static int64_t now = 1000;
 static struct net_if iface;
 static bool missing_iface;
 static int suspend_error, enter_error, exit_error, enters, exits, resumes;
+#if defined(CONFIG_EZ_CAM_WNM_PARK_PINS)
+static bool pins_parked;
+static int park_error, restore_error;
+int halow_wnm_pins_park(void) {
+    assert(iface.suspended && !pins_parked);
+    if (park_error) return park_error;
+    pins_parked = true; return 0;
+}
+int halow_wnm_pins_restore(void) {
+    assert(iface.suspended && pins_parked);
+    pins_parked = false; return restore_error;
+}
+#endif
 int64_t k_uptime_get(void) { return now; }
 struct net_if *net_if_get_first_wifi(void) { return missing_iface ? NULL : &iface; }
 int net_if_suspend(struct net_if *p) {
@@ -20,6 +33,10 @@ int net_if_suspend(struct net_if *p) {
 int net_if_resume(struct net_if *p) { assert(p == &iface && p->suspended); p->suspended = 0; ++resumes; return 0; }
 int mmwlan_set_wnm_sleep_enabled_ext(const struct mmwlan_set_wnm_sleep_enabled_args *args) {
     assert(args->chip_powerdown_enabled && iface.suspended);
+#if defined(CONFIG_EZ_CAM_WNM_PARK_PINS)
+    /* Entry negotiates before parking; exit restores before any SDK access. */
+    assert(!pins_parked);
+#endif
     now += 20;
     if (args->wnm_sleep_enabled) { ++enters; return enter_error; }
     ++exits; return exit_error;
@@ -115,6 +132,18 @@ int main(void) {
     assert(exec(&ctx) == COAP_204_CHANGED && halow_sleep_pending());
     assert(halow_sleep_step(&ctx,false) == -1);
     halow_sleep_request_end();
+#if defined(CONFIG_EZ_CAM_WNM_PARK_PINS)
+    /* A failed park rolls back an already accepted WNM before ungating IP. */
+    park_error = -EBUSY; prior = exits;
+    assert(halow_wnm_enter() == -EBUSY && !iface.suspended && !pins_parked);
+    assert(exits == prior + 1);
+    park_error = 0;
+    assert(halow_wnm_enter() == 0 && pins_parked);
+    restore_error = -EIO; prior = exits;
+    assert(halow_wnm_exit() == -EIO && !iface.suspended && !pins_parked);
+    assert(exits == prior); /* Do not call SDK when host SPI failed to resume. */
+    restore_error = 0;
+#endif
     int count = 0; lwm2m_data_t *data = NULL;
     assert(halow_sleep.readFunc(&ctx,0,&count,&data,&halow_sleep) == COAP_205_CONTENT && count == 7 && data[0].id == 1);
     free(data); count = 0; data = NULL;

@@ -472,3 +472,53 @@ claimed.
 Build, flash, packet and live-test logs are local under
 `/private/tmp/ezcam-watchdog-review-*`; firmware and collected logs are also
 saved in ignored `artifacts/ez-cam01-watchdog/`.
+
+## WNM-only signal-pin parking experiment — 2026-11-24
+
+Added optional `CONFIG_EZ_CAM_WNM_PARK_PINS` and separate
+`ez-cam01-wnm-pins` BLE camera build. The baseline profiles keep it disabled.
+After successful SDK WNM powerdown, explicitly suspend host SPI and disconnect
+SCK/MOSI/MISO/IRQ/BUSY with no pulls or input buffers. Keep RESETn/WAKE output
+LOW and CS output HIGH. The HaLow supply remains enabled. Restore saved GPIO
+configuration and output latches before SDK wake; do not change nrfx interrupt
+allocations or normal DTIM operation. See the pin table in SLEEP.md.
+
+All 21 native tests passed, including actual parking source under ASan/UBSan,
+exact GPIO restoration, PM ownership and entry/exit error cleanup. The test
+profile built successfully: 976432 flash bytes and 250725 static RAM bytes.
+The original BLE profile also rebuilt with parking disabled: 975744 flash
+bytes and 250643 static RAM bytes. That baseline image was not flashed over
+the parking experiment.
+HEX SHA-256:
+`bf906335dad586550041f6ee6baa33327aa0527cd18e860e608347e39b82494a`.
+J-Link probe 607000398 programmed and verified the image, then reset/run.
+
+During real 30- and 15-second WNM cycles, SWD confirmed passive-pin PIN_CNF=2
+(input disconnected, no pull, high impedance), control-output PIN_CNF=3,
+RESETn/WAKE LOW, CS HIGH, SPIM00 ENABLE=0, camera EN LOW and module EN HIGH.
+The passive diagnostic array showed `[1,1,0,0]` and `[1,2,1,0]` during sleep;
+after wake it showed `[0,1,1,0]` and `[0,2,2,0]`. GPIO configurations returned
+to their pre-sleep values. The BUSY input's normal pull-down was restored.
+
+Both cycles returned result 0 and served Current Time reads afterward.
+Entry/exit took 36/1287 ms and 26/1314 ms; slept times were 30000/15000 ms.
+Final watchdog state was online with zero context rebuilds or Wi-Fi reconnects,
+and image length remained zero. One diagnostic read timed out and succeeded
+on retry. Sleep duration was restored to 60 seconds.
+
+This establishes GPIO behavior and functional wake. SWD was attached for these
+checks. The operator subsequently reported no measurable improvement with pin
+parking: WNM still measured approximately 1 mW, compared with approximately
+550 uW for the no-HaLow condition. Thus GPIO parking did not explain the
+reported difference at the meter's resolution; it does not isolate module,
+regulator or MCU contributions. No AP settings or credentials were changed.
+Firmware and logs are saved under ignored
+`artifacts/ez-cam01-wnm-pins/`.
+
+Source/configuration inspection confirms the WNM application loop blocks on
+eventfd/poll until its sleep deadline, `CONFIG_TICKLESS_KERNEL=y`, GRTC system
+timing, and the ARM Zephyr idle path using WFI. Status logging and the optional
+20 ms diagnostic timer are disabled. These establish an idle-capable design,
+not measured CPU sleep residency or proof that all clocks/peripherals are idle.
+System OFF on nRF54L15 supports a GRTC wake but resets the MCU; it cannot simply
+resume the existing Zephyr/Wakaama/SDK contexts after the timed WNM interval.
