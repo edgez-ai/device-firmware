@@ -369,3 +369,52 @@ longer quiet periods is **not yet established**. This is an experimental WNM
 version, not a replacement for the validated ordinary DTIM10 baseline.
 The remaining receive/ARP issue needs further diagnosis; no permanent AP ARP
 workaround or DTIM change is installed.
+
+## WNM sustained power regression — 2026-11-24
+
+The operator reported approximately **100 mW throughout the middle of the WNM
+sleep interval**, with J-Link disconnected. This is a sustained plateau, not
+an entry/exit spike. The current WNM powerdown version therefore fails the
+power objective; SDK success and network timeouts did not prove low power.
+
+Code inspection found a Zephyr WLAN HAL shutdown polarity error. RESETn is
+`GPIO_ACTIVE_LOW` on P1.04, but `mmhal_wlan_deinit()` wrote logical 0, which
+drives physical HIGH and releases reset. The official MM8108 SDK HAL asserts
+reset before disconnecting SPI/GPIO. The correction writes logical 1 (physical
+LOW) before bus release. Rail power itself is not switched off. Startup and
+hard-reset timing remain unchanged.
+
+The real pinned HAL is compiled under native ASan/UBSan with GPIO logical-to-
+physical polarity simulation. It fails before the fix and passes after it for
+three init/reset/deinit cycles, asserting RESETn LOW during bus release and
+HIGH after restart. The BLE camera environment builds successfully. This is
+a confirmed code defect and a plausible cause of excess power; the amount of
+physical power reduction has **not yet been measured** on the corrected image.
+
+The RESETn-fix image was subsequently flashed and verified. During a 30-second
+WNM cycle, SWD register inspection showed P1.04 configured as an output with its
+output LOW, WAKE output LOW, camera EN output LOW and SPIM00 ENABLE=0. This
+checks controller output configuration, not an independent voltage measurement.
+After 30000 ms, wake completed with result 0; entry took 25 ms and exit 1277 ms.
+Current Time Read and sleep-duration Write recovered. The operator then
+confirmed SWD disconnected, cold booted and prepared the meter; a separate
+60-second WNM measurement was triggered over LwM2M. Its power reading is pending.
+
+The separate no-SWD cold-boot measurement cycle completed: cached sleep time
+60000 ms, exit 1266 ms, result 0, state idle, one completed cycle, and cached
+resources readable after wake. No CoAP requests were sent during the measurement
+window. The operator's middle-of-sleep power value remains pending.
+
+### Operator-confirmed WNM power result
+
+The operator reported **approximately 1 mW** for the middle-of-sleep stable
+plateau in the 60-second RESETn-fix trial, with J-Link/SWD disconnected and
+after a full cold boot. The previous WNM plateau was approximately 100 mW under
+the same disconnected-debugger measurement setup; the ordinary DTIM10 sleep
+comparison was approximately 3 mW. This is a flat sleep-floor measurement, not
+an average over WNM negotiation, wake, camera captures or image transfer.
+
+The confirmed improvement follows the WLAN HAL's reset-polarity correction;
+no DTIM, UART or logging changes were introduced. The independent SDK WNM-exit
+flag fix remains pinned. Long-idle ARP recovery is still a separate open issue;
+this power result does not establish that it is resolved.

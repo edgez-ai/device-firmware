@@ -1,10 +1,17 @@
 # Timed WNM deep sleep
 
-**Experimental:** short sleep/wake cycles work, but longer quiet periods can
-lose ARP reachability after chip powerdown. A temporary AP neighbor bypass
-restored unicast reads during diagnosis; it was removed. See
+**Measured WNM sleep floor: approximately 1 mW**, confirmed by the operator
+with J-Link/SWD disconnected after a cold boot, during the middle of a
+60-second sleep interval. Correcting the WLAN HAL RESETn polarity reduced the
+previous approximately 100 mW sleep plateau. The ordinary DTIM10 comparison
+floor was approximately 3 mW. These are sleep plateaus, not cycle averages
+including entry, wake, captures or transfers.
+
+**Experimental recovery:** short sleep/wake cycles work, but longer quiet
+periods previously lost ARP reachability after chip powerdown. A temporary AP
+neighbor bypass restored unicast reads during diagnosis; it was removed.
+Sustained ARP recovery has not been revalidated after the RESETn fix. See
 [validation evidence](VALIDATION.md#remaining-issue-after-longer-quiet-time).
-The ordinary DTIM10 baseline remains the known-working comparison.
 
 The camera firmware exposes vendor object **31026**, instance 0. The AP stays
 at DTIM10. Sleep uses the pinned EdgeZ SDK's
@@ -70,6 +77,21 @@ SDK results include 1 unspecified error, 3 unavailable, 6 timed out and 13 not
 supported. Local results include `-16` busy, `-19` no interface and `-100` link
 down on Zephyr. Native host tests compare symbolic errno values because host
 numbers can differ.
+
+## Required WLAN HAL powerdown fix
+
+The EdgeZ Zephyr HAL asserts RESETn before releasing SPI in
+`mmhal_wlan_deinit()`. The carrier declares RESETn active-low, so Zephyr's
+logical `1` drives the output LOW and holds reset. The former logical `0`
+released reset, leaving the module running while the SDK considered it powered
+down. The official MM8108 SDK reference also asserts reset during deinit.
+
+This change does not switch off the external regulator or change normal DTIM,
+UART or logging settings. `python3 tests/test_wlan_hal_powerdown.py` compiles
+the real HAL against GPIO polarity stubs and verifies reset is held during bus
+release and released on restart. Hardware inspection confirmed reset and WAKE
+outputs LOW, camera power off and SPIM00 disabled during WNM. The operator's
+subsequent disconnected-SWD measurement confirmed approximately 1 mW.
 
 ## Required SDK exit fix
 
