@@ -134,3 +134,19 @@ Use the default image for the validated baseline comparison.
 Some internal files and Kconfig symbols retain the legacy `RADAR_` naming
 to preserve the working implementation. Radar acquisition and MQTT are not
 started by the camera profile. See [migration notes](docs/MIGRATION.md).
+
+## License notices
+
+**EdgeZ HaLow Mesh (`edgez-halow-mesh`) is licensed for non-commercial use
+and internal evaluation under the [EdgeZ Non-Commercial and Commercial
+Software License, Version 1.0](licenses/EDGEZERON-NON-COMMERCIAL.txt).
+Commercial use requires a separate written license from EdgeZeron AI AB.**
+
+**Morse Micro MM-IoT-SDK precompiled libraries and binaries covered by the
+[Morse Micro Binary Distribution License Agreement](licenses/LicenseRef-MorseMicroBDL.txt)
+remain subject to that agreement.** SDK source components have separate
+licenses; the binary license does not cover the entire SDK.
+
+See [third-party notices](THIRD-PARTY-NOTICES.md) for component scope and
+upstream references. This repository's [Apache-2.0 license](LICENSE) does not
+replace dependency-specific terms.
