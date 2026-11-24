@@ -90,6 +90,8 @@ int main(void) {
     exit_error = 0;
     assert(exec(&ctx) == COAP_204_CHANGED); now += 2000;
     assert(halow_sleep_step(&ctx,true) == 10000); now += 500;
+    assert(halow_sleep_step(&ctx,false) == 9500 && iface.suspended);
+    now += 9500;
     assert(halow_sleep_step(&ctx,false) == -1 && !iface.suspended && read_value(&ctx,3) == -ENETDOWN);
     missing_iface = true; assert(exec(&ctx) == COAP_204_CHANGED); now += 2000;
     assert(halow_sleep_step(&ctx,true) == -1 && read_value(&ctx,3) == -ENODEV);

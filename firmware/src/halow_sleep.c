@@ -74,7 +74,9 @@ int halow_sleep_step(lwm2m_context_t *ctx, bool online)
 {
     if (state == IDLE) return -1;
     if (state == SLEEPING) {
-        if (online && remaining(deadline)) return remaining(deadline);
+        /* DHCP/server/AP state can expire while the radio is deliberately off.
+         * Honour the requested timer; recover connectivity after wake. */
+        if (remaining(deadline)) return remaining(deadline);
         state = WAKING;
         slept_ms = k_uptime_get() - sleep_started;
         int64_t start = k_uptime_get();

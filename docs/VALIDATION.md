@@ -418,3 +418,35 @@ The confirmed improvement follows the WLAN HAL's reset-polarity correction;
 no DTIM, UART or logging changes were introduced. The independent SDK WNM-exit
 flag fix remains pinned. Long-idle ARP recovery is still a separate open issue;
 this power result does not establish that it is resolved.
+
+## Connection watchdog review and device deployment — 2026-11-24
+
+Reviewed native registration/update ACK tracking, staged context rebuild and
+Wi-Fi reconnect, bounded retry backoff, WNM pause/wake handling and client
+teardown. The Wakaama teardown fix is pinned at `04e18bb`; pending transaction
+cancellation callbacks run before their server/Observe state is freed.
+
+All 19 host tests passed, including the actual Wakaama core teardown and
+watchdog policy tests under ASan/UBSan. Both `ez-cam01` and
+`ez-cam01-ble-prov` built successfully. The default image uses 861308 flash
+bytes and 249338 static RAM bytes; the BLE image uses 975744 flash bytes and
+250643 static RAM bytes. The BLE image retains a 60-second probe interval,
+45-second response deadline, WNM support and disabled RTT.
+
+Ran the J-Link uploader on probe 607000398. Flash comparison found the reviewed
+BLE image already matched device contents; the uploader then reset and ran it.
+HEX SHA-256:
+`3e3f9ce6f1c04e210e98e93a556f0a305388b87373b34b191c491024e46ef5b9`.
+Startup registration and all eight watchdog diagnostic resources were readable.
+
+A 15-second WNM cycle completed with result 0, entry 27 ms, exit 1301 ms and
+15000 ms asleep. The existing context was retained with zero watchdog context
+rebuilds or Wi-Fi reconnects. Subsequent resource requests intermittently timed
+out; later, 16 consecutive reads succeeded without a reset. Gateway logs also
+show a five-second API cooldown after timeouts. These observations do not
+establish reliable sustained downlink delivery or resolve the earlier ARP issue.
+
+Further server-restart, silent-packet-loss and expired-registration sleep tests
+are in progress at this commit. No new physical power result is claimed.
+Build, flash, packet and live-test logs are local under
+`/private/tmp/ezcam-watchdog-review-*`.

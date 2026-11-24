@@ -58,7 +58,7 @@ Read, Write and Execute it without a separate dashboard.
 5. Count the duration from successful WNM entry. No Wakaama steps or resource
    handling run while asleep, so server requests may timeout. Local short-button
    LED behavior continues; it does not wake the radio.
-6. Exit WNM, always restore interface TX, request a registration update and
+6. Exit WNM, always restore interface TX, validate or rebuild registration and
    resume native Observe processing, IMU subscriptions and the local clock.
    Preserve the Wakaama context and existing association on the normal path.
 
@@ -68,7 +68,9 @@ no AP configuration change is required for this implementation.
 
 Long sleeps can outlive DHCP leases, the 300-second LwM2M registration, or AP
 association state. Native network/registration recovery may then be required.
-A lost link during sleep causes an early WNM exit so ordinary recovery can run.
+IP/lease/link changes during WNM do not shorten the requested timer. The
+[connection watchdog](CONNECTION-WATCHDOG.md) checks connectivity after wake
+and also covers ordinary operation, including AP and server restarts.
 WNM exit may return an error even though the chip has left low power (for
 example the AP no longer knows the station). The last result records that error.
 No request is made to extend AP association/lease lifetimes silently.

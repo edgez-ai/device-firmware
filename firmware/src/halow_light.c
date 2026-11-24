@@ -21,6 +21,10 @@
 #include <mmwlan.h>
 #include "liblwm2m.h"
 #include "halow_light.h"
+#include "halow_sta.h"
+#if defined(CONFIG_EZ_CAM_CONNECTION_WATCHDOG)
+#include "halow_connection.h"
+#endif
 #include "halow_sleep_diag.h"
 #if defined(CONFIG_EZ_CAM_WNM_SLEEP)
 #include "halow_sleep.h"
@@ -567,6 +571,9 @@ static void run(void *unused1, void *unused2, void *unused3)
 		get_object_device(),
 #endif
 		&light, &button,
+#if defined(CONFIG_EZ_CAM_CONNECTION_WATCHDOG)
+		&halow_connection,
+#endif
 #if defined(CONFIG_EZ_CAM_WNM_SLEEP)
 		&halow_sleep,
 #endif
@@ -607,14 +614,23 @@ static void run(void *unused1, void *unused2, void *unused3)
 		}
 		bool was_asleep = halow_sleep_active();
 		int sleep_wait = halow_sleep_step(ctx, (atomic_get(&link_generation) & 1) != 0);
-		if (was_asleep && !halow_sleep_active() && ctx) {
+		if (was_asleep && !halow_sleep_active()) {
 			/* Publish button/LED changes made locally during the sleep interval. */
-			lwm2m_resource_value_changed(ctx, &light_uri);
-			lwm2m_resource_value_changed(ctx, &button_state_uri);
-			lwm2m_resource_value_changed(ctx, &button_counter_uri);
-			(void)lwm2m_update_registration(ctx, 1, false);
+			if (ctx) {
+				lwm2m_resource_value_changed(ctx, &light_uri);
+				lwm2m_resource_value_changed(ctx, &button_state_uri);
+				lwm2m_resource_value_changed(ctx, &button_counter_uri);
+			}
+#if defined(CONFIG_EZ_CAM_CONNECTION_WATCHDOG)
+			halow_connection_wake();
+#else
+			if (ctx) (void)lwm2m_update_registration(ctx, 1, false);
+#endif
 		}
 		if (halow_sleep_active()) {
+#if defined(CONFIG_EZ_CAM_CONNECTION_WATCHDOG)
+			halow_connection_pause();
+#endif
 			process_button(NULL); /* Keep local button/LED operation. No CoAP. */
 			struct zsock_pollfd wake = {.fd = wake_fd, .events = ZSOCK_POLLIN};
 			if (zsock_poll(&wake, 1, sleep_wait) > 0) {
@@ -623,8 +639,21 @@ static void run(void *unused1, void *unused2, void *unused3)
 			continue;
 		}
 #endif
+		bool reset_context = false;
+#if defined(CONFIG_EZ_CAM_CONNECTION_WATCHDOG)
+		enum halow_connection_action recovery = halow_connection_step(ctx,
+			(atomic_get(&link_generation) & 1) != 0);
+		if (recovery == HALOW_CONN_UPDATE && ctx) {
+			(void)lwm2m_update_registration(ctx, 1, false);
+		} else if (recovery == HALOW_CONN_REGISTER) {
+			reset_context = true;
+		} else if (recovery == HALOW_CONN_RECONNECT) {
+			reset_context = true;
+			(void)halow_sta_reconnect();
+		}
+#endif
 		atomic_val_t generation = atomic_get(&link_generation);
-		if (generation != active) {
+		if (generation != active || reset_context) {
 			if (link.fd >= 0) zsock_close(link.fd);
 			link.fd = -1;
 #if defined(CONFIG_EZ_CAM_SENSORS)
@@ -641,6 +670,9 @@ static void run(void *unused1, void *unused2, void *unused3)
 			}
 #if defined(CONFIG_EZ_CAM_WNM_SLEEP)
 			halow_sleep_forget_requests();
+#endif
+#if defined(CONFIG_EZ_CAM_CONNECTION_WATCHDOG)
+			halow_connection_context_closed();
 #endif
 			active = generation;
 		}
@@ -704,6 +736,10 @@ static void run(void *unused1, void *unused2, void *unused3)
 #endif
 #if defined(CONFIG_EZ_CAM_WNM_SLEEP)
 		if (sleep_wait >= 0 && (wait_ms < 0 || sleep_wait < wait_ms)) wait_ms = sleep_wait;
+#endif
+#if defined(CONFIG_EZ_CAM_CONNECTION_WATCHDOG)
+		int connection_wait = halow_connection_wait_ms();
+		if (connection_wait >= 0 && (wait_ms < 0 || connection_wait < wait_ms)) wait_ms = connection_wait;
 #endif
 		struct zsock_pollfd fds[] = {
 			{.fd = wake_fd, .events = ZSOCK_POLLIN},

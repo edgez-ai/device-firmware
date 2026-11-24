@@ -15,8 +15,8 @@ int halow_sta_start(void);
 /* True while associated and holding an IPv4 address. */
 bool halow_sta_is_online(void);
 
-#endif /* HALOW_STA_H */
-
-#if defined(CONFIG_EZ_CAM_BLE_PROV)
+/* Schedule disconnect/reconnect on the system workqueue; never call SDK APIs
+ * from network event callbacks or interrupt context. */
 int halow_sta_reconnect(void);
-#endif
+
+#endif /* HALOW_STA_H */

@@ -2,6 +2,25 @@
 
 menu "IWRL6432 radar host"
 
+config EZ_CAM_CONNECTION_WATCHDOG
+	bool "HaLow and LwM2M connection recovery watchdog"
+	default y
+	help
+	  Confirm registration responses during ordinary operation and after WNM.
+	  Rebuild LwM2M then reconnect Wi-Fi on failure; pause probes during sleep.
+
+config EZ_CAM_CONNECTION_PROBE_SECONDS
+	int "Connection watchdog registration probe interval, seconds"
+	depends on EZ_CAM_CONNECTION_WATCHDOG
+	range 15 3600
+	default 60
+
+config EZ_CAM_CONNECTION_RESPONSE_SECONDS
+	int "Connection watchdog response deadline, seconds"
+	depends on EZ_CAM_CONNECTION_WATCHDOG
+	range 15 300
+	default 45
+
 config EZ_CAM_WNM_SLEEP
 	bool "LwM2M timed WNM deep sleep object"
 	default y

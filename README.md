@@ -37,7 +37,7 @@ Dependencies are local submodules, with no sibling-repository lookup:
 | Dependency | Pinned revision |
 | --- | --- |
 | EdgeZ `mm-iot-zephyr` | `31e94bda2b18709b4d5d088f8462670bd079da0e` |
-| EdgeZ Wakaama client core | `b68607938ce43160cd9abe1bd14bcc3d483e9c04` |
+| EdgeZ Wakaama client core | `04e18bbcc561d820bd4000014fb60cd4ed9acbed` |
 | Seeed PlatformIO platform | `c41f41ec51c8cf91550adc8b1487e1b093c8605c` |
 | Zephyr / Arm toolchain | 4.4.0 / 14.2.1, as pinned in `firmware/platformio.ini` |
 
@@ -116,6 +116,8 @@ photo. No SPI input-gating/high-output experiment is imported.
 
 [Timed WNM deep sleep](docs/SLEEP.md) is available through LwM2M object
 `31026`. It runs only after Execute; normal standby continues to use DTIM10.
+The [connection watchdog](docs/CONNECTION-WATCHDOG.md) checks native LwM2M ACKs
+during normal operation and after wake, with staged reconnect recovery.
 
 The original carrier measured about 3 mW at the flat sleep floor after a
 cold boot with SWD disconnected, before any photo. That is inherited source

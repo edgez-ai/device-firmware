@@ -264,7 +264,6 @@ int halow_sta_start(void)
 	return 0;
 }
 
-#if defined(CONFIG_EZ_CAM_BLE_PROV)
 static void reconnect_handler(struct k_work *work)
 {
 	ARG_UNUSED(work);
@@ -273,13 +272,20 @@ static void reconnect_handler(struct k_work *work)
 	(void)k_work_cancel_delayable(&connect_work);
 	associated = false; have_address = false;
 	halow_light_link_changed(false);
+#ifdef RADAR_HALOW_COAP_UDP
 	net_dhcpv4_stop(iface);
+#endif
 	(void)net_mgmt(NET_REQUEST_WIFI_DISCONNECT, iface, NULL, 0);
 	(void)k_work_reschedule(&connect_work, K_MSEC(500));
 }
 K_WORK_DEFINE(reconnect_work, reconnect_handler);
 int halow_sta_reconnect(void)
 {
+#if defined(CONFIG_EZ_CAM_BLE_PROV)
+	char ssid[33], password[64];
+	if (!ez_prov_get_credentials(ssid, password)) return -EAGAIN;
+#else
+	if (!CONFIG_RADAR_HALOW_SSID[0]) return -EAGAIN;
+#endif
 	return k_work_submit(&reconnect_work) < 0 ? -EIO : 0;
 }
-#endif
