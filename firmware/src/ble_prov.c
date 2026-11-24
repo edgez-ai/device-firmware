@@ -430,6 +430,11 @@ static void stop_window(struct k_work *work)
 	int rc = bt_disable(); last_error = rc;
 	if (!rc) bt_started = false;
 }
+int ez_prov_forget_network(void)
+{
+	int rc = settings_delete("ezcam/wifi");
+	return rc == -ENOENT ? 0 : rc;
+}
 static void held_reset(struct k_work *work)
 {
 	ARG_UNUSED(work);
@@ -439,7 +444,7 @@ static void held_reset(struct k_work *work)
 	bool configured = have_active;
 	k_mutex_unlock(&config_lock);
 	if (!configured) { (void)k_work_submit(&start_work); return; }
-	int rc = settings_delete("ezcam/wifi");
+	int rc = ez_prov_forget_network();
 	last_error = rc;
 	if (rc && rc != -ENOENT) return;
 	sys_reboot(SYS_REBOOT_COLD);

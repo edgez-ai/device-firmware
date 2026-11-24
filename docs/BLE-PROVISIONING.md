@@ -28,6 +28,14 @@ channel field is retained for tracker record compatibility. AP DTIM10,
 parking, and the 64 KiB JPEG cache are retained. Runtime logs, console and RTT
 remain disabled. BLE is only an onboarding activity, not a standby service.
 
+The BLE camera profile defers UART22 driver initialization until the first
+Capture execute. Boot only parks TX/RX and turns camera power off; it does
+not initialize the UART just to suspend it. After capture, the same normal
+IRQ-disable / suspend / sleep-pinctrl shutdown path is used. This fixes the
+reported higher sleep floor before the first capture. The operator confirmed
+3 mW after a cold start with J-Link disconnected, before any Capture or
+Observe subscription; see VALIDATION.md.
+
 Short presses retain the existing LED toggle and LwM2M button/light updates.
 Hold for five seconds to delete the saved BLE network and reboot. Factory
 identity, country and factory Wi-Fi are retained. With factory Wi-Fi present,

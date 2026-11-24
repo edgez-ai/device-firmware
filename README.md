@@ -81,6 +81,15 @@ The endpoint is derived from the HaLow MAC. The existing Camera object is
 | `/5001/0/5` | Read | JPEG buffer capacity, 65536 bytes |
 | `/3311/0/5850` | Read/Write/Observe | LED/light state |
 | `/3347/0/5500` | Read/Observe | Physical button state |
+| `/3313/0/5702..5704` | Read/Observe | IMU acceleration X/Y/Z in m/s2 |
+| `/3334/0/5702..5704` | Read/Observe | IMU angular rate X/Y/Z in rad/s |
+| `/3/0/7` | Read | Power source voltage, instance 0, in mV |
+| `/3/0/9` | Read | Battery percentage (3.0–4.2 V estimate; above 5 V reports 100%) |
+
+[Sensor lifecycle and wiring](docs/SENSORS.md): ordinary reads enable and
+sample only on demand. IMU Observe keeps the requested engine running and
+reports changes through native LwM2M; cancelling the last observer returns it
+to chip power-down. The ADC divider is off between voltage reads.
 
 Resolution strings: `160x120`, `320x240`, `640x480`, `800x600`,
 `1024x720`, `1024x768`. The intermediate 800x600 and 1024x720 modes use

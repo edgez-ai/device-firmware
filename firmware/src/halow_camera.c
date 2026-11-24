@@ -3,6 +3,7 @@
 #include <errno.h>
 #include <stdlib.h>
 #include <string.h>
+#include <zephyr/device.h>
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/pinctrl.h>
 #include <zephyr/drivers/uart.h>
@@ -57,6 +58,7 @@ static const struct camera_resolution camera_sizes[] = {
 };
 static size_t camera_size;
 static bool ready;
+static bool uart_configured;
 
 static void uart_rx(const struct device *dev, void *user)
 {
@@ -73,15 +75,36 @@ static void uart_rx(const struct device *dev, void *user)
 	}
 }
 
+/* With deferred init, no UART driver API may run before device_init(). */
+static int camera_uart_init(void)
+{
+	if (uart_configured) return 0;
+#if DT_NODE_HAS_PROP(DT_ALIAS(camera0), zephyr_deferred_init)
+	if (!device_is_ready(uart)) {
+		int rc = device_init(uart);
+
+		if (rc != 0) return rc;
+	}
+#endif
+	if (!device_is_ready(uart)) return -ENODEV;
+	int rc = uart_irq_callback_user_data_set(uart, uart_rx, NULL);
+
+	if (rc == 0) uart_configured = true;
+	return rc;
+}
+
 static int camera_standby(void)
 {
-	/* Use the same shutdown path before the first capture and after every
-	 * capture, including failures. Mask UART activity before suspending. */
-	uart_irq_rx_disable(uart);
-	uart_irq_tx_disable(uart);
-	uart_irq_err_disable(uart);
-	int rc = pm_device_action_run(uart, PM_DEVICE_ACTION_SUSPEND);
+	int rc = 0;
 
+	/* Before the first deferred capture, do not initialize or touch the UART
+	 * driver just to suspend it. Only park its pins and camera supply. */
+	if (device_is_ready(uart)) {
+		uart_irq_rx_disable(uart);
+		uart_irq_tx_disable(uart);
+		uart_irq_err_disable(uart);
+		rc = pm_device_action_run(uart, PM_DEVICE_ACTION_SUSPEND);
+	}
 	if (rc == 0 || rc == -EALREADY) {
 		/* An already-suspended device skips its PM callback. Reapply sleep
 		 * pinctrl so TX/RX buffers, pulls and pin clocks are parked anyway. */
@@ -96,12 +119,15 @@ static int camera_standby(void)
 
 int halow_camera_start(void)
 {
-	if (!device_is_ready(uart) || !gpio_is_ready_dt(&power)) return -ENODEV;
+	if (!gpio_is_ready_dt(&power)) return -ENODEV;
 	int rc = gpio_pin_configure_dt(&power, GPIO_OUTPUT_INACTIVE);
 
 	if (rc != 0) return rc;
-	rc = uart_irq_callback_user_data_set(uart, uart_rx, NULL);
+#if !DT_NODE_HAS_PROP(DT_ALIAS(camera0), zephyr_deferred_init)
+	/* Retain the validated eager-init path in the original baseline env. */
+	rc = camera_uart_init();
 	if (rc != 0) return rc;
+#endif
 	rc = camera_standby();
 	if (rc != 0) return rc;
 	ready = true;
@@ -283,7 +309,8 @@ static int camera_capture_powered(void)
 
 	if (rc != 0) return rc;
 	k_sleep(K_SECONDS(4));
-	rc = pm_device_action_run(uart, PM_DEVICE_ACTION_RESUME);
+	rc = camera_uart_init();
+	if (rc == 0) rc = pm_device_action_run(uart, PM_DEVICE_ACTION_RESUME);
 	if (rc == 0 || rc == -EALREADY) {
 		rc = camera_capture();
 	}

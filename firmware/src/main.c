@@ -13,6 +13,9 @@
 #include "ble_prov.h"
 #include "radar_app.h"
 #include "radar_mqtt.h"
+#if defined(CONFIG_EZ_CAM_SENSORS)
+#include "sensors_hw.h"
+#endif
 
 LOG_MODULE_REGISTER(main, CONFIG_RADAR_LOG_LEVEL);
 
@@ -27,6 +30,10 @@ int main(void)
 	if (rc != 0) {
 		LOG_ERR("radar start failed: %d", rc);
 	}
+#if defined(CONFIG_EZ_CAM_SENSORS)
+	int sensors_rc = board_sensors_init();
+	if (sensors_rc) LOG_WRN("Sensor standby initialization: %d", sensors_rc);
+#endif
 	(void)halow_sta_start();
 	(void)radar_mqtt_start();
 	if (CONFIG_RADAR_STATUS_LOG_SECONDS == 0) {

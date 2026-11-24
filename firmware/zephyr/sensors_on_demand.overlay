@@ -1,0 +1,38 @@
+/* EdgeZ E73 carrier schematic, not the XIAO Sense power pins. */
+#include <zephyr/dt-bindings/i2c/i2c.h>
+/ {
+	zephyr,user {
+		battery-enable-gpios = <&gpio1 14 GPIO_ACTIVE_HIGH>;
+		battery-input-gpios = <&gpio1 13 GPIO_ACTIVE_HIGH>;
+		io-channels = <&adc 6>;
+	};
+};
+&i2c30_default {
+	group1 {
+		psels = <NRF_PSEL(TWIM_SDA, 0, 4)>, <NRF_PSEL(TWIM_SCL, 0, 3)>;
+		bias-pull-up;
+	};
+};
+&i2c30_sleep {
+	group1 {
+		psels = <NRF_PSEL(TWIM_SDA, 0, 4)>, <NRF_PSEL(TWIM_SCL, 0, 3)>;
+		low-power-enable;
+	};
+};
+&i2c30 {
+	status = "okay";
+	clock-frequency = <I2C_BITRATE_FAST>;
+	zephyr,deferred-init;
+};
+&lsm6ds3tr_c {
+	status = "okay";
+	irq-gpios = <&gpio0 2 GPIO_ACTIVE_HIGH>;
+	zephyr,deferred-init;
+};
+&adc {
+	status = "okay";
+	zephyr,deferred-init;
+	channel@6 {
+		zephyr,oversampling = <4>;
+	};
+};

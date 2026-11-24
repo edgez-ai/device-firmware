@@ -141,3 +141,176 @@ the approximately 3 mW baseline remains necessary. Factory-first Wi-Fi
 precedence is implemented; the hardware run intentionally used empty factory
 Wi-Fi to test the BLE-saved path. Factory-page readback, binaries and private
 provisioning logs are saved locally under ignored `artifacts/ez-cam01-ble-prov/`.
+
+## Pre-first-capture UART sleep regression — 2026-11-24
+
+Operator measured approximately 4 mW before capture and approximately 3 mW
+once capture completed and UART closed. This points at the startup/capture
+lifecycle; it does not establish that BLE advertising remains active. The
+previous ENABLE=0 snapshots alone did not prove the reported power floor.
+
+Prepared a UART-only lifecycle test in the BLE camera profile: UART22 uses
+`zephyr,deferred-init`, so its driver is not initialized at system boot.
+Startup only parks TX/RX in sleep pinctrl and disables camera power. The first
+Capture initializes the UART once, then uses the existing capture and shutdown
+sequence. The non-BLE baseline retains its eager initialization behavior.
+
+Clean build passed in 188.72 seconds, with 960668 flash bytes and 249310 static
+RAM bytes. Generated devicetree confirms deferred init on UART22. Test HEX/ELF
+and logs are saved under ignored `artifacts/ez-cam01-uart-deferred/`.
+J-Link sees approximately 3.3 V but SWD attach failed. This image has not yet
+been flashed, and no improved power result is claimed. Next verification is
+a cold start without taking a photo, followed by normal Capture and shutdown.
+
+## On-demand IMU / voltage and native IMU Observe — 2026-11-24
+
+Added IPSO accelerometer 3313, gyrometer 3334 and voltage 3316. Carrier netlist
+confirms SDA P0.04, SCL P0.03, IMU address 0x6a, battery divider EN P1.14 and
+battery input P1.13/AIN6. IMU VDD/VDDIO are hardwired to 3.3 V, so idle means
+both ODRs in power-down, not a physical rail cut. The ADC divider is switched.
+
+The combined BLE/camera/sensor build passed in 166.93 seconds: 970104 flash
+bytes, 250039 static RAM bytes. The standard camera environment also built
+successfully in 121.45 seconds. Ten native object/Observe lifecycle cases
+passed under AddressSanitizer and UndefinedBehaviorSanitizer. They cover
+on-demand/metadata/Discover, attribute-only watchers, change/no-change,
+multiple subscriptions, cancellation, registration/context loss and read
+failures. These tests use a fake board, not simulated analog measurements.
+
+SWD recovered on the next attach attempt. The combined BLE image was then
+programmed and verified on probe 607000398. Before any Capture, snapshots
+showed camera ready=1, UART configured=0, JPEG length=0, BLE stopped, UART22
+ENABLE=0, SAADC ENABLE=0, TWIM30 ENABLE=0, observation mask=0 and successful
+IMU standby initialization. P1.14 divider EN and P1.09 camera EN were low.
+
+Real single-resource reads and native Observe succeeded over HaLowLink2.
+Two Observe subscriptions (3313/0/5702 and 3334/0/5702) produced changing
+measurements, then both were cancelled. After cancellation, software stream
+and IMU ODR masks were zero, I2C/ADC/UART remained disabled, divider EN stayed
+low, and image length remained zero. No photo was taken. SWD memory/register
+checks do not constitute a new standby-power measurement.
+
+The live tests exposed a separate server TLV typing defect: float payloads
+were shown as integer bit patterns and the string V as integer 86. Server fix
+8086cf2 uses the Web UI's XML resource model types; package deployment is being
+validated separately. Instance-level Read on the current gateway REST API
+returns not_implemented; use individual resource reads for this gateway.
+Private build binaries and logs are saved under ignored
+`artifacts/ez-cam01-sensors/`. See SENSORS.md for lifecycle and object paths.
+
+The operator then disconnected J-Link, fully power-cycled the board without
+a Capture or Observe subscription, and confirmed a flat sleep floor of
+**3 mW** ("3mW, works well"). The combined sensor/BLE firmware therefore
+restores the pre-first-photo low-power condition; this is a flat sleep-floor
+measurement, not an average including DTIM wakes or active IMU observation.
+
+## Standard Device object — 2026-11-24
+
+Replaced the example Device object and removed the standalone Voltage 3316
+object. Device /3/0/7 returns source-instance 0 in mV and /3/0/9 follows the
+operator policy: 3.0–4.2 V estimates 0–100%, above 5 V is 100%, with clamping.
+Factory identity, firmware/Zephyr versions, heap/SRAM figures, error state,
+time metadata and delayed Reboot/Factory Reset commands use real platform
+state. Current measurement and ExtDevInfo are absent because no corresponding
+hardware/link exists. Battery charging status remains Unknown.
+
+Fifteen native scenarios pass with AddressSanitizer/UndefinedBehaviorSanitizer.
+The BLE firmware compiled successfully (970236 flash / 250248 static RAM bytes
+before the final portable identifier/validation cleanup). Gateway HTTP/CoAP
+regression checks pass for float/string/bool/integer and Device multi-instance
+TLV values; Observe SSE preserves the same model types and instance IDs.
+Gateway fix b8b4332 is published and its installation package is building.
+This Device revision has not yet been flashed or measured; the confirmed
+3 mW result above belongs to the prior combined sensor image.
+
+
+The final pre-clock Device image (970240 flash / 250248 static RAM bytes) was
+programmed and verified. Live registration contains Device 3, accelerometer
+3313 and gyrometer 3334, with no Voltage 3316. Real reads returned factory
+serial FGH200M-5037CDF35BB6, Zephyr 4.4.0, battery estimate 22%, free heap 35 kB,
+SRAM 262 kB and Unknown charging status. The old gateway still mis-types some
+TLV strings/multiple resources; the corresponding package is built separately.
+After reads, SWD confirmed UART22/SAADC/TWIM30 disabled, camera/divider EN low,
+no image and no IMU Observe/hardware mask. Standard non-BLE image also builds
+(855644 flash / 248927 static RAM bytes). No Capture was invoked in this run.
+
+Automatic clock sync reuses the existing registration and update ACK JSON,
+adding full UNIX milliseconds while preserving relative time/sampling fields.
+Client accepts only matching pending registration transactions and applies time
+only after Wakaama reports successful registration. Nineteen native cases pass
+using the actual CoAP parser and ASan/UBSan. Real HTTP/CoAP integration verifies
+UNIX time in both registration and renewal ACKs. Web time values remain UNIX
+seconds and are converted to browser milliseconds for display. The clock sync
+firmware/gateway pair is still undergoing hardware deployment validation.
+
+
+Gateway package `0.1+9d4525cc82b2-1` is deployed on HaLowLink2. The UCI config
+SHA256 remains 097318fa71ec467f5b53280299bc02b69ad94141b804599a67fad3c4c69fa7a4;
+DTIM remains 10. Real reads now show Manufacturer EdgeZ.ai, Model EZ-CAM01,
+Device voltage as integer mV in a resource-instance map, and IMU floats.
+A subsequent native IMU Observe run produced 15 typed FLOAT SSE events and
+both subscriptions returned cancelled=true. No subscription was left active.
+
+The first clock matcher incorrectly inspected URI option nodes after Wakaama
+serialization had freed them. Matching the preserved serialized request buffer
+fixed it; native tests now reproduce that serialization step. Real /3/0/13
+then returned valid UNIX time without a manual Write, approximately 1.7 seconds
+behind the host read completion. Standard Current Time Write/Read and Reboot
+Execute had also passed on hardware. Time metadata adds no polling thread.
+
+Voltage checks: R26 and R29 are each 100 kΩ; R27 is the EN pull-down. The ADC
+measures the TP4054 BAT/VBAT+ net, not USB_5V. A 100 ms test showed readings near
+2910–2916 and 3272–3280 mV; longer acquisition, discarding first samples and
+turning off per-read calibration did not remove the variation. A divider-only
+500 ms delay also returned about 2896–2914 mV. SAADC NOISESHAPE read back zero.
+The operator reported 3.3 V supply and later 5.149 V USB / 4154 mV reading.
+USB input is not a valid direct reference for the BAT net.
+
+The operator explicitly selected a fixed ×1.13 correction, overriding the
+proposal to keep unity pending a direct VBAT measurement. Final profile keeps
+100 ms settling after actual SAADC enable, applies ×1.13 to Device voltage and
+uses that corrected voltage for Battery Level. Build/flash verification of this
+last profile is pending. A fresh disconnected-SWD standby-power measurement
+has not been made for the Device/clock/voltage-calibration revision.
+
+
+Final ×1.13 / 100 ms firmware was built, programmed and verified. Initial
+field testing found a second clock issue: the ACK JSON crosses the gateway's
+256-byte Block2 boundary once uptime gains digits, leaving the closing JSON
+brace out of block 0. Packet capture confirmed this exact first-block shape.
+The client now retains the complete timestamp field from block 0 and applies
+it only after Wakaama accepts registration; Wakaama still owns block transfers.
+Pending metadata expires after 60 seconds and is cleared on context teardown.
+Twenty-two native cases cover serialization, fragment completion, expiry and
+context reset; all fifteen Device/sensor lifecycle scenarios also still pass.
+
+Real Current Time Read succeeded after flash and again following standard
+Device Reboot Execute (2.04). The second boot returned 2026-11-24 19:31:24 UTC
+without a manual time Write. Real corrected voltage read about 3286 mV, but the
+underlying reading variation remains; the multiplier is operator-selected.
+Post-read SWD checks confirmed UART22, SAADC and TWIM30 ENABLE=0, BLE stopped,
+no image, zero IMU stream/hardware masks and zero sensor I/O errors. Camera and
+divider EN were low. No Capture or Factory Reset Execute was performed.
+
+
+## Local clock RTT correction and Time Observe — 2026-11-24
+
+Both camera environments compile with local ticking and an eight-sample
+registration RTT mean. Retransmission ambiguity is excluded. Clock Observe
+runs a one-second change check only while a live watcher exists. Sixteen native
+Device/sensor scenarios and twenty-five clock/RTT cases pass under ASan/UBSan.
+Hardware's clock advanced from 1795549435 to 1795549439 between two reads without
+a time-sync request. A successful Observe run then delivered eight consecutive
+integer values 1795549439 through 1795549446 and cancellation returned true.
+Earlier rapid re-observation attempts timed out at the gateway twice; a later
+start/cancel passed. No gateway fix for that intermittent behavior is claimed.
+The final hardware RTT history contained two valid samples, 1096 ms and
+171 ms: mean RTT 633.5 ms, with 316 ms integer one-way correction. Mean-window
+replacement and retransmission exclusion were validated natively. Standard
+Registration Update Trigger executes returned 2.04. After cancellation, the
+clock Observe deadline read back zero and SAADC remained disabled.
+
+Final BLE build: 972308 flash bytes / 250364 static RAM bytes. The corresponding
+standard camera environment also built successfully. The final firmware retains
+×1.13 voltage correction, 100 ms ADC-enabled settling, DTIM10 and the deferred
+camera UART startup fix. No new physical standby-power measurement was supplied.

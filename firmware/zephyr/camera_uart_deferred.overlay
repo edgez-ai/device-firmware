@@ -1,0 +1,5 @@
+/* BLE camera profile: no UART initialization until Capture is executed.
+ * GPIO pin parking and camera power-off are still performed at startup. */
+&uart22 {
+	zephyr,deferred-init;
+};

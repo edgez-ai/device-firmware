@@ -2,6 +2,25 @@
 
 menu "IWRL6432 radar host"
 
+config EZ_CAM_SENSORS
+	bool "On-demand IMU and battery voltage LwM2M objects"
+	default n
+
+config EZ_CAM_VOLTAGE_SCALE_PPM
+	int "Battery voltage calibration scale, parts per million"
+	depends on EZ_CAM_SENSORS
+	range 500000 2000000
+	default 1000000
+	help
+	  Multiplier applied after the carrier's R26/R29 divider correction.
+	  1000000 means 1.0. Calibrate against measured VBAT+, not USB input.
+
+config EZ_CAM_IMU_OBSERVE_INTERVAL_MS
+	int "IMU change sampling interval while observed, milliseconds"
+	depends on EZ_CAM_SENSORS
+	range 100 60000
+	default 1000
+
 config EZ_CAM_BLE_PROV
 	bool "ESP-IDF-compatible BLE provisioning"
 	default n

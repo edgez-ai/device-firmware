@@ -24,6 +24,11 @@
 #include "halow_sleep_diag.h"
 #ifdef RADAR_HALOW_CAMERA
 #include "halow_camera.h"
+#if defined(CONFIG_EZ_CAM_SENSORS)
+#include "halow_sensors.h"
+#include "halow_device.h"
+#include "halow_time_sync.h"
+#endif
 #endif
 
 LOG_MODULE_REGISTER(halow_light, CONFIG_RADAR_LOG_LEVEL);
@@ -410,8 +415,7 @@ uint8_t lwm2m_buffer_send(void *handle, uint8_t *data, size_t length, void *arg)
 	if (link->fd < 0 || length > MAX_COAP) return COAP_500_INTERNAL_SERVER_ERROR;
 	halow_sleep_diag_activity();
 #ifdef RADAR_HALOW_COAP_UDP
-	return zsock_send(link->fd, data, length, 0) == length ?
-		COAP_NO_ERROR : COAP_500_INTERNAL_SERVER_ERROR;
+	bool sent = zsock_send(link->fd, data, length, 0) == length;
 #else
 	uint8_t frame[FRAME_HEADER + MAX_COAP];
 	memcpy(frame, link->ap, 6);
@@ -420,9 +424,23 @@ uint8_t lwm2m_buffer_send(void *handle, uint8_t *data, size_t length, void *arg)
 	frame[14] = FRAME_VERSION;
 	sys_put_be16(length, frame + 15);
 	memcpy(frame + FRAME_HEADER, data, length);
-	return zsock_sendto(link->fd, frame, FRAME_HEADER + length, 0,
+	bool sent = zsock_sendto(link->fd, frame, FRAME_HEADER + length, 0,
 			   (struct sockaddr *)&link->address, sizeof(link->address)) ==
-		FRAME_HEADER + length ? COAP_NO_ERROR : COAP_500_INTERNAL_SERVER_ERROR;
+		FRAME_HEADER + length;
+#endif
+#if defined(CONFIG_EZ_CAM_SENSORS)
+	if (sent) halow_time_sync_sent(handle, data, length);
+#endif
+	return sent ? COAP_NO_ERROR : COAP_500_INTERNAL_SERVER_ERROR;
+}
+
+static void receive_packet(lwm2m_context_t *ctx, struct link_session *link,
+                           uint8_t *packet, size_t length)
+{
+#if defined(CONFIG_EZ_CAM_SENSORS)
+	halow_time_sync_packet(ctx, packet, length, link);
+#else
+	lwm2m_handle_packet(ctx, packet, length, link);
 #endif
 }
 
@@ -476,7 +494,7 @@ static void receive(lwm2m_context_t *ctx, struct link_session *link)
 	ssize_t length = zsock_recv(link->fd, datagram, sizeof(datagram), ZSOCK_MSG_DONTWAIT);
 	if (length >= 4 && length <= MAX_COAP) {
 		halow_sleep_diag_activity();
-		lwm2m_handle_packet(ctx, datagram, length, link);
+		receive_packet(ctx, link, datagram, length);
 	}
 }
 #else
@@ -518,7 +536,7 @@ static void receive(lwm2m_context_t *ctx, struct link_session *link)
 	size_t length = sys_get_be16(frame + 15);
 	if (length >= 4 && length <= MAX_COAP && FRAME_HEADER + length <= n) {
 		halow_sleep_diag_activity();
-		lwm2m_handle_packet(ctx, frame + FRAME_HEADER, length, link);
+		receive_packet(ctx, link, frame + FRAME_HEADER, length);
 	}
 }
 
@@ -530,9 +548,18 @@ static void run(void *unused1, void *unused2, void *unused3)
 	lwm2m_context_t *ctx = NULL;
 	lwm2m_object_t *objects[] = {
 		NULL,
-		get_server_object(1, "U", 300, false), get_object_device(), &light, &button,
+		get_server_object(1, "U", 300, false),
+#if defined(CONFIG_EZ_CAM_SENSORS)
+		&halow_device,
+#else
+		get_object_device(),
+#endif
+		&light, &button,
 #ifdef RADAR_HALOW_CAMERA
 		&halow_camera,
+#endif
+#if defined(CONFIG_EZ_CAM_SENSORS)
+		&halow_accelerometer, &halow_gyrometer,
 #endif
 #if !defined(CONFIG_RADAR_SIMULATE_PRESENCE)
 		&radar_presence, &radar_distance,
@@ -542,7 +569,9 @@ static void run(void *unused1, void *unused2, void *unused3)
 		LOG_ERR("Could not allocate Light Control LwM2M objects");
 		return;
 	}
+#if !defined(CONFIG_EZ_CAM_SENSORS)
 	objects[2]->executeFunc = NULL;
+#endif
 	lwm2m_stringToUri("/3311/0/5850", sizeof("/3311/0/5850") - 1, &light_uri);
 	lwm2m_stringToUri("/3347/0/5500", sizeof("/3347/0/5500") - 1, &button_state_uri);
 	lwm2m_stringToUri("/3347/0/5501", sizeof("/3347/0/5501") - 1, &button_counter_uri);
@@ -556,6 +585,11 @@ static void run(void *unused1, void *unused2, void *unused3)
 		if (generation != active) {
 			if (link.fd >= 0) zsock_close(link.fd);
 			link.fd = -1;
+#if defined(CONFIG_EZ_CAM_SENSORS)
+			(void)halow_sensors_step(NULL);
+			(void)halow_device_step(NULL);
+			halow_time_sync_reset();
+#endif
 			if (ctx != NULL) lwm2m_close(ctx);
 			ctx = NULL;
 			if (objects[0] != NULL) {
@@ -604,11 +638,21 @@ static void run(void *unused1, void *unused2, void *unused3)
 #endif
 		process_button(ctx);
 
+#if defined(CONFIG_EZ_CAM_SENSORS)
+		int sensor_wait = halow_sensors_step(ctx);
+		int clock_wait = halow_device_step(ctx);
+		halow_sensors_internal_read(true);
+#endif
 		time_t timeout = 300;
 		int wait_ms = (active & 1) ? 1000 : -1;
 		if (ctx != NULL && lwm2m_step(ctx, &timeout) == 0) {
 			wait_ms = CLAMP(timeout, 0, 300) * 1000;
 		}
+#if defined(CONFIG_EZ_CAM_SENSORS)
+		halow_sensors_internal_read(false);
+		if (sensor_wait >= 0 && (wait_ms < 0 || sensor_wait < wait_ms)) wait_ms = sensor_wait;
+		if (clock_wait >= 0 && (wait_ms < 0 || clock_wait < wait_ms)) wait_ms = clock_wait;
+#endif
 		struct zsock_pollfd fds[] = {
 			{.fd = wake_fd, .events = ZSOCK_POLLIN},
 			{.fd = link.fd, .events = ZSOCK_POLLIN},

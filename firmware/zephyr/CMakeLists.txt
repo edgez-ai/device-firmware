@@ -64,7 +64,12 @@ endif()
 
 if(EZ_CAM_BLE_PROV)
   list(APPEND EXTRA_CONF_FILE "${CMAKE_CURRENT_LIST_DIR}/ble_prov.conf")
-  list(APPEND EXTRA_DTC_OVERLAY_FILE "${CMAKE_CURRENT_LIST_DIR}/factory_data.overlay")
+  list(APPEND EXTRA_DTC_OVERLAY_FILE "${CMAKE_CURRENT_LIST_DIR}/factory_data.overlay"
+    "${CMAKE_CURRENT_LIST_DIR}/camera_uart_deferred.overlay")
+endif()
+
+if(EZ_CAM_SENSORS)
+  list(APPEND EXTRA_CONF_FILE "${CMAKE_CURRENT_LIST_DIR}/sensors_on_demand.conf")
 endif()
 
 # Pinned EdgeZ Morse Micro Zephyr module. PlatformIO does not use a west
@@ -189,4 +194,19 @@ if(CONFIG_EZ_CAM_BLE_PROV)
     "${RADAR_NRF54_DIR}/src/prov_protocol.c"
     "${RADAR_NRF54_DIR}/src/factory_record.c"
     "${RADAR_NRF54_DIR}/src/factory_data.c")
+endif()
+
+if(CONFIG_EZ_CAM_SENSORS)
+  target_sources(app PRIVATE "${RADAR_NRF54_DIR}/src/sensors_hw.c"
+    "${RADAR_NRF54_DIR}/src/halow_sensors.c"
+    "${RADAR_NRF54_DIR}/src/halow_device.c"
+    "${RADAR_NRF54_DIR}/src/device_platform.c"
+    "${RADAR_NRF54_DIR}/src/halow_time_sync.c")
+  target_include_directories(app PRIVATE "${WAKAAMA_CORE}/coap")
+  execute_process(COMMAND git -C "${RADAR_REPO_DIR}" describe --always --dirty
+    OUTPUT_VARIABLE ez_cam_revision OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+  if(NOT ez_cam_revision)
+    set(ez_cam_revision "unversioned")
+  endif()
+  target_compile_definitions(app PRIVATE EZ_CAM_APP_REV="${ez_cam_revision}")
 endif()
