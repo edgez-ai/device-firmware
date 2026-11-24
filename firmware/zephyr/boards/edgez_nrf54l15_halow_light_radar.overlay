@@ -1,0 +1,14 @@
+#include "edgez_nrf54l15_fgh200m_radar.overlay"
+#include "edgez_nrf54l15_presence_controls.dtsi"
+
+/ {
+	zephyr,user {
+		/* The radar sends a 0x00 wake byte before each presence report. */
+		radar-rx-wake-gpios = <&gpio1 12 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
+	};
+};
+
+&gpio1 {
+	/* Use GPIO SENSE/PORT for the button instead of a GPIOTE channel. */
+	sense-edge-mask = <0x100>;
+};

@@ -1,0 +1,12 @@
+/* Carrier pinout shared with template-offgrid-tracker: KEY=P1.08,
+ * LED=P2.05, both active low. Do not use the XIAO P0.00 button default. */
+&usr_btn {
+	gpios = <&gpio1 8 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
+	label = "Presence test KEY";
+};
+
+/ {
+	zephyr,user {
+		presence-test-led-gpios = <&gpio2 5 GPIO_ACTIVE_LOW>;
+	};
+};

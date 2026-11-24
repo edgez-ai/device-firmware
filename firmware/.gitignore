@@ -1,0 +1,6 @@
+.pio/
+zephyr/secrets.conf
+zephyr/halowlink2-secrets.conf
+
+__pycache__/
+*.pyc

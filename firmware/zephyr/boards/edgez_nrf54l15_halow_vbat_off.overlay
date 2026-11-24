@@ -1,0 +1,15 @@
+#include "edgez_nrf54l15_halow_imu_off.overlay"
+
+&adc {
+	status = "disabled";
+};
+
+&gpio1 {
+	/* The base overlay disables the regulator. Keep its enable pin low. */
+	vbat_divider_off: vbat-divider-off {
+		gpio-hog;
+		gpios = <15 GPIO_ACTIVE_HIGH>;
+		output-low;
+		line-name = "vbat-divider-disable";
+	};
+};

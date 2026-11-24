@@ -1,0 +1,158 @@
+/*
+ * EdgeZ nRF54L15 + FGH200M (MM8108) carrier with an IWRL6432 radar.
+ *
+ * HaLow wiring, from template-offgrid-tracker
+ * (firmware/zephyr/boards/edgez_nrf54l15_fgh200m_companion.overlay):
+ *   HaLow power       -> P2.00
+ *   CS/SCK/MISO/MOSI  -> P1.07/P2.01/P2.04/P2.02
+ *   IRQ/BUSY/WAKE/RESETn -> P1.06/P1.10/P1.05/P1.04
+ *
+ * Radar wiring -- ASSUMED, CHANGE TO MATCH YOUR BOARD. The defaults reuse the
+ * carrier's GPS connector:
+ *   nRF P1.11 (UART TX) -> radar RS232_RX   (CLI UART)
+ *   nRF P1.12 (UART RX) <- radar RS232_TX
+ *   nRF P1.09           -> enable of the radar's 3.3 V supply (high = on)
+ * Common ground. The radar's NRESET is not connected. Supply enable is
+ * raised once on startup and stays high across UART retries.
+ *
+ * The radar's boot mode is selected by the SOP0/SOP1 switches on the radar
+ * board: flashing = SOP0 off, SOP1 off; functional = SOP0 on, SOP1 off. The
+ * radar is flashed separately over USB; select functional mode for nRF use.
+ */
+
+/ {
+	aliases {
+		radar-uart = &uart22;
+	};
+
+	zephyr,user {
+		/* Active = radar 3.3 V supply on. */
+		radar-power-gpios = <&gpio1 9 GPIO_ACTIVE_HIGH>;
+	};
+
+	/* MM8108 supply switch: on before the Wi-Fi driver initialises. */
+	halow_power: halow-power {
+		compatible = "regulator-fixed";
+		regulator-name = "halow-power";
+		enable-gpios = <&gpio2 0 GPIO_ACTIVE_HIGH>;
+		regulator-boot-on;
+		startup-delay-us = <500000>;
+	};
+};
+
+/* The stock XIAO LED occupies the HaLow power-enable pin. */
+&led0 {
+	status = "disabled";
+};
+
+/* XIAO peripherals that are not populated or not used on this carrier. */
+&lsm6ds3tr_c {
+	status = "disabled";
+};
+
+&pdm20 {
+	status = "disabled";
+};
+
+&rfsw_ctl {
+	status = "disabled";
+};
+
+&rfsw_pwr {
+	status = "disabled";
+};
+
+&vbat_pwr {
+	status = "disabled";
+};
+
+/* P1.08 is the carrier's key, so the default UART20 pins cannot be used, and
+ * UART21 is not routed. Logs go to SEGGER RTT. */
+&uart20 {
+	status = "disabled";
+};
+
+&uart21 {
+	status = "disabled";
+};
+
+/ {
+	chosen {
+		/delete-property/ zephyr,console;
+		/delete-property/ zephyr,shell-uart;
+		/delete-property/ nordic,rpc-uart;
+	};
+};
+
+&pinctrl {
+	radar_uart_default: radar_uart_default {
+		group1 {
+			psels = <NRF_PSEL(UART_TX, 1, 11)>;
+		};
+
+		group2 {
+			psels = <NRF_PSEL(UART_RX, 1, 12)>;
+			bias-pull-up;
+		};
+	};
+
+	radar_uart_sleep: radar_uart_sleep {
+		group1 {
+			psels = <NRF_PSEL(UART_TX, 1, 11)>,
+				<NRF_PSEL(UART_RX, 1, 12)>;
+			low-power-enable;
+		};
+	};
+};
+
+/* UART22 and I2C22 are alternate modes of the same serial peripheral. */
+/delete-node/ &i2c22;
+
+&uart22 {
+	status = "okay";
+	current-speed = <115200>;
+	pinctrl-0 = <&radar_uart_default>;
+	pinctrl-1 = <&radar_uart_sleep>;
+	pinctrl-names = "default", "sleep";
+};
+
+&spi00_default {
+	group1 {
+		psels = <NRF_PSEL(SPIM_SCK, 2, 1)>,
+			<NRF_PSEL(SPIM_MISO, 2, 4)>,
+			<NRF_PSEL(SPIM_MOSI, 2, 2)>;
+	};
+};
+
+&spi00_sleep {
+	group1 {
+		psels = <NRF_PSEL(SPIM_SCK, 2, 1)>,
+			<NRF_PSEL(SPIM_MISO, 2, 4)>,
+			<NRF_PSEL(SPIM_MOSI, 2, 2)>;
+		low-power-enable;
+	};
+};
+
+&xiao_spi {
+	status = "okay";
+	cs-gpios = <&gpio1 7 GPIO_ACTIVE_LOW>;
+	pinctrl-0 = <&spi00_default>;
+	pinctrl-1 = <&spi00_sleep>;
+	pinctrl-names = "default", "sleep";
+
+	morse_wifi: morse@0 {
+		status = "okay";
+		compatible = "morsemicro,mm8108";
+		/* Standard MM8108 MF15457 board configuration, as used by the
+		 * tracker template until a FGH200M-specific file is available. */
+		bcf = "bcf_mf15457.mbin";
+		spi-max-frequency = <32000000>;
+		reg = <0>;
+
+		spi-irq-gpios = <&gpio1 6 GPIO_ACTIVE_LOW>;
+		/* BUSY and WAKE are required for DTIM power save. */
+		busy-gpios = <&gpio1 10 (GPIO_ACTIVE_HIGH | GPIO_PULL_DOWN)>;
+		wakeup-gpios = <&gpio1 5 GPIO_ACTIVE_HIGH>;
+		resetn-gpios = <&gpio1 4 GPIO_ACTIVE_LOW>;
+	};
+};

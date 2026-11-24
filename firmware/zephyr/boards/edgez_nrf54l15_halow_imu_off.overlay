@@ -1,0 +1,19 @@
+/* Remove the XIAO boot-on supply and leave the unused IMU bus idle. */
+/delete-node/ &imu_power_default_on;
+
+&pdm_imu_pwr {
+	status = "disabled";
+};
+
+&i2c30 {
+	status = "disabled";
+};
+
+&gpio0 {
+	imu_power_off: imu-power-off {
+		gpio-hog;
+		gpios = <1 GPIO_ACTIVE_HIGH>;
+		output-low;
+		line-name = "imu-power-disable";
+	};
+};

@@ -1,0 +1,22 @@
+#include "edgez_nrf54l15_fgh200m_radar.overlay"
+
+/* The button/MQTT simulator does not consume radar UART data. */
+&uart22 {
+	status = "disabled";
+	/delete-property/ pinctrl-0;
+	/delete-property/ pinctrl-1;
+	/delete-property/ pinctrl-names;
+};
+
+&gpio1 {
+	/* Use GPIO SENSE/PORT for the button instead of a GPIOTE channel. */
+	sense-edge-mask = <0x100>;
+	radar_power_off: radar-power-off {
+		gpio-hog;
+		gpios = <9 GPIO_ACTIVE_HIGH>;
+		output-low;
+		line-name = "radar-power-disable";
+	};
+};
+
+#include "edgez_nrf54l15_presence_controls.dtsi"

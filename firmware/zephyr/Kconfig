@@ -1,0 +1,230 @@
+# nRF54L15 + FGH200M host firmware for the IWRL6432 radar.
+
+menu "IWRL6432 radar host"
+
+config RADAR_MQTT_ENABLED
+	bool "Start MQTT state publisher"
+	default y
+	help
+	  Disable for a HaLow-associated DTIM power comparison without MQTT.
+
+config RADAR_MQTT_HOST
+	string "MQTT broker IPv4 address"
+	default "192.168.12.136"
+
+config RADAR_MQTT_PORT
+	int "MQTT TCP port"
+	range 1 65535
+	default 1883
+
+config RADAR_MQTT_USERNAME
+	string "MQTT username (set in untracked secrets.conf)"
+	default ""
+
+config RADAR_MQTT_PASSWORD
+	string "MQTT password (set in untracked secrets.conf)"
+	default ""
+
+config RADAR_MQTT_TOPIC_PREFIX
+	string "MQTT topic prefix; device ID and /presence are appended"
+	default "radar"
+
+config RADAR_MQTT_KEEPALIVE_SECONDS
+	int "MQTT keepalive interval (s)"
+	range 30 3600
+	default 30
+
+config RADAR_HALOW_GATEWAY
+	string "Fallback IPv4 gateway if DHCP supplies none"
+	default ""
+
+config RADAR_HALOW_COAP_SERVER
+	string "LwM2M server IPv4 override for the camera"
+	default ""
+	help
+	  Leave empty to use the address of the HaLow DHCP server.
+	  UDP profiles register to this address using CoAP on port 5683.
+
+config RADAR_SIMULATE_PRESENCE
+	bool "Simulate presence with the carrier button instead of the radar"
+	default n
+	help
+	  Start with nobody present. Each debounced button press toggles
+	  present/nobody. Publish synthetic results through the normal status
+	  and result callback only on changes. The button uses GPIO interrupts
+	  and 30 ms debounce. No radar UART input is required.
+
+config RADAR_SIMULATION_LED
+	bool "Keep the indicator LED on while simulated presence is active"
+	depends on RADAR_SIMULATE_PRESENCE
+	default n
+
+config RADAR_TI_BAUD_TEST
+	bool "Match TI's 113636-baud output with UART22's nearest divisor"
+	default n
+	help
+	  Test the TI IWRL6432 DIG #3 baud-rate erratum at a 40 MHz radar
+	  reference clock. UART22 uses 16 MHz, so its closest integer divisor
+	  gives about 113475 baud for both command transmission and reception.
+
+config RADAR_CONFIGURE_SENSOR
+	bool "Configure the IWRL6432 after power-up"
+	depends on !RADAR_SIMULATE_PRESENCE
+	help
+	  Send the 10-second human-detection profile over the CLI UART. Requires
+	  radar firmware with humanDetCfg and hostReportCfg support.
+
+config RADAR_POWER_OFF_MS
+	int "Time the radar supply stays off during a power cycle (ms)"
+	default 500
+
+config RADAR_POWER_ON_SETTLE_MS
+	int "Time the UART stays released after the supply is switched on (ms)"
+	default 2000
+	help
+	  Allow the radar supply to settle and its application to boot before
+	  resuming UART communication in functional mode.
+
+config RADAR_BOOT_TIMEOUT_MS
+	int "Time allowed for the radar CLI prompt after power-up (ms)"
+	default 3000
+
+config RADAR_CLI_TIMEOUT_MS
+	int "Time allowed for the answer to one configuration command (ms)"
+	default 2000
+
+config RADAR_WATCHDOG_MS
+	int "Initial or continuous radar result timeout (ms)"
+	default 25000 if RADAR_CONFIGURE_SENSOR
+	default 5000
+
+config RADAR_HEARTBEAT_TIMEOUT_S
+	int "Restart a configured radar after this long without a report (s)"
+	default 660
+	help
+	  Keep this above two heartbeat periods of the sensor profile.
+
+config RADAR_WAKE_WINDOW_MS
+	int "Maximum time to receive the report after the UART RX wake (ms)"
+	default 100
+
+config RADAR_WAKE_LINGER_MS
+	int "Time to wait for UART data between received chunks (ms)"
+	default 20
+	help
+	  Must exceed the 10 ms asynchronous UART receive idle timeout.
+
+config RADAR_RETRY_DELAY_MS
+	int "Pause before retrying radar configuration (ms)"
+	default 2000
+
+config RADAR_UART_RX_BUFFER_SIZE
+	int "Radar UART receive buffer (bytes)"
+	default 1024
+
+config RADAR_THREAD_STACK_SIZE
+	int "Radar thread stack size"
+	default 4096
+
+config RADAR_THREAD_PRIORITY
+	int "Radar thread priority"
+	default 7
+
+config RADAR_STATUS_LOG_SECONDS
+	int "Period of the status log line (s), 0 disables"
+	range 0 3600
+	default 30
+
+config RADAR_HALOW_SSID
+	string "Wi-Fi HaLow access point SSID"
+	default ""
+	help
+	  Leave empty to keep HaLow idle. Put the real value in
+	  zephyr/secrets.conf, which is not tracked by git.
+
+config RADAR_HALOW_PASSWORD
+	string "Wi-Fi HaLow WPA3-SAE password"
+	default ""
+	help
+	  Leave empty for an open network.
+
+config RADAR_HALOW_RETRY_SECONDS
+	int "Delay before a HaLow reconnect attempt (s)"
+	default 10
+
+config RADAR_HALOW_CHANNEL
+	int "HaLow S1G operating channel (0 scans all channels)"
+	range 0 255
+	default 26
+	help
+	  Restrict connection scans to this S1G channel. US channel 26 is
+	  915 MHz with 2 MHz bandwidth. This is the AP operating channel,
+	  not its 1 MHz primary channel. No full-band fallback is used.
+
+config RADAR_HALOW_DUTY_CYCLE_BURST
+	bool "Distribute the regulatory HaLow airtime budget in bursts"
+	help
+	  Apply Morse burst mode before station association. The selected
+	  regional channel and duty-cycle limits still apply.
+
+config RADAR_HALOW_DYNAMIC_PS_TIMEOUT_MS
+	int "HaLow dynamic power-save timeout (ms)"
+	default 100
+	help
+	  Time the radio stays awake after traffic before it returns to
+	  sleeping between DTIM beacons.
+
+config RADAR_HALOW_LISTEN_INTERVAL
+	int "HaLow listen interval in beacons (0 keeps DTIM wake-ups)"
+	range 0 65535
+	default 0
+	help
+	  When non-zero the station announces this listen interval and the
+	  radio sleeps through DTIM beacons, waking once per interval. It
+	  then misses broadcast traffic, and a downlink frame can wait up to
+	  one interval at the access point. With a 100 TU beacon, 50 is
+	  about 5 s.
+
+config RADAR_HALOW_HEALTH_CHECK_SECONDS
+	int "HaLow chip health-check period (s), -1 keeps the SDK default"
+	range -1 86400
+	default -1
+	help
+	  Each health check wakes the radio. The SDK default is 60-120 s.
+	  0 disables periodic checks.
+
+config RADAR_HALOW_DIAG
+	bool "Measurement aid: report HaLow idle activity over LwM2M"
+	default n
+	help
+	  Sample the Morse WAKE, BUSY and IRQ lines every 20 ms and count
+	  received frames. Reading 3347/0/5750 returns the shares since the
+	  previous read. The sampling timer adds host wake-ups, so do not
+	  use this build for current measurements.
+
+config RADAR_HALOW_SLEEP_DIAG
+	bool "Cache nRF54L15 pre-sleep hardware snapshots for LwM2M"
+	depends on SOC_NRF54L15 && !RADAR_HALOW_DIAG
+	select ARM_ON_ENTER_CPU_IDLE_HOOK
+	default n
+	help
+	  Read hardware state from the CPU idle-entry hook, without adding a
+	  sampling timer or querying the radio. Read cached results on
+	  3347/0/5750. These are pre-WFI states, not measured sleep residency.
+
+config RADAR_HALOW_DIAG_INTERVAL_S
+	int "Apps-core diagnostic capture interval (seconds)"
+	depends on RADAR_HALOW_DIAG
+	range 15 3600
+	default 60
+	help
+	  Capture Apps-core firmware statistics at this interval while associated.
+	  Each query wakes the radio. MAC statistics are captured once per boot.
+
+module = RADAR
+module-str = radar host
+source "subsys/logging/Kconfig.template.log_config"
+
+endmenu
+
+source "Kconfig.zephyr"

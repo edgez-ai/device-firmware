@@ -1,0 +1,6 @@
+[submodule "firmware/platforms/mm-iot-zephyr"]
+	path = firmware/platforms/mm-iot-zephyr
+	url = https://github.com/edgez-ai/mm-iot-zephyr.git
+[submodule "third_party/wakaama"]
+	path = third_party/wakaama
+	url = https://github.com/edgez-ai/wakaama.git

@@ -1,0 +1,7 @@
+#include "edgez_nrf54l15_halow_vbat_off.overlay"
+
+&radar_power_off {
+	/delete-property/ output-low;
+	output-high;
+	line-name = "radar-benchmark-power-enable";
+};

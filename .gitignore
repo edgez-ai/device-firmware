@@ -1,0 +1,7 @@
+firmware/.pio/
+firmware/zephyr/secrets.conf
+firmware/zephyr/halowlink2-secrets.conf
+artifacts/
+__pycache__/
+*.pyc
+.DS_Store
