@@ -112,7 +112,10 @@ The original mixed button-SENSE/BUSY-GPIOTE behavior is preserved. RTT,
 logging and the console are disabled in the default image. The fork's
 `SPI_IRQ_PULL_UP` support remains available; its pull-up is disabled in the
 validated profile. The camera stays off and UART suspended before the first
-photo. No SPI input-gating/high-output or WNM experiment is imported.
+photo. No SPI input-gating/high-output experiment is imported.
+
+[Timed WNM deep sleep](docs/SLEEP.md) is available through LwM2M object
+`31026`. It runs only after Execute; normal standby continues to use DTIM10.
 
 The original carrier measured about 3 mW at the flat sleep floor after a
 cold boot with SWD disconnected, before any photo. That is inherited source

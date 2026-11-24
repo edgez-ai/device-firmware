@@ -2,6 +2,14 @@
 
 menu "IWRL6432 radar host"
 
+config EZ_CAM_WNM_SLEEP
+	bool "LwM2M timed WNM deep sleep object"
+	default y
+	select NET_POWER_MANAGEMENT
+	help
+	  Object 31026 negotiates WNM sleep with MM8108 chip powerdown, then
+	  exits on a timer. Online DTIM configuration and association are kept.
+
 config EZ_CAM_SENSORS
 	bool "On-demand IMU and battery voltage LwM2M objects"
 	default n

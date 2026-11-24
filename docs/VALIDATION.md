@@ -314,3 +314,58 @@ Final BLE build: 972308 flash bytes / 250364 static RAM bytes. The corresponding
 standard camera environment also built successfully. The final firmware retains
 ×1.13 voltage correction, 100 ms ADC-enabled settling, DTIM10 and the deferred
 camera UART startup fix. No new physical standby-power measurement was supplied.
+
+## Timed WNM Sleep — 2026-11-24
+
+Object 31026 adds a duration Write and deferred Sleep Execute. Native ASan/UBSan
+tests passed for duration limits, response grace, TX/transaction drain, AP
+rejection, exit errors, link loss and Execute retransmission deduplication.
+Both camera environments built. The existing sensor and clock suites and the
+server's real HTTP/CoAP typed decoding integration passed.
+
+The first hardware run (before the SDK exit fix) accepted Execute in 17 ms,
+negotiated entry in 18 ms, slept 30000 ms and exited in 1327 ms. Immediate
+post-wake reads/writes worked and the AP association timestamp was unchanged.
+**This did not prove stable recovery:** subsequent quiet-period requests and
+Observe timed out. Packet capture showed responses arriving only during later
+uplink activity. Temporary AP neighbor entries used for diagnosis were removed.
+
+The SDK source and real-FSM regression test reproduced the cause: hardware
+restore reapplies chip WNM sleep while the FSM is ACTIVE, but the old powerdown
+exit path failed to clear it. The fix explicitly clears it on both exit paths
+and reacquires the restored VIF ID. The native SDK test fails before the fix and
+passes after it, for both WNM variants and repeated cycles.
+
+Server model/type table commit `d34e4bd` built successfully in GitHub Actions
+run `45476678861`; its application-only IPK was installed on HaLowLink2. Existing
+gateway config hash stayed
+`097318fa71ec467f5b53280299bc02b69ad94141b804599a67fad3c4c69fa7a4`,
+AP WNM support remained enabled, and DTIM stayed 10. No router firmware, kernel
+or wireless configuration was changed.
+
+With the SDK fix flashed, the strengthened 30-second test passed: Execute
+acknowledged in 15 ms, entry 40 ms, sleep 30000 ms, exit 1299 ms, result 0.
+Both immediate Read and a Read after another 12 seconds of silence succeeded,
+then duration Write succeeded. A second 15-second cycle with an existing
+Current Time Observe entered in 19 ms, slept 15000 ms, exited in 1282 ms and
+returned result 0; six notifications arrived after wake without re-subscribing.
+Observe was cancelled successfully and the sleep duration restored to 60 s.
+The AP association was retained across both fixed cycles; its start timestamp
+was `1795551569660` ms. No static neighbor entry remained. Both firmware
+environments also rebuilt successfully with the SDK fix.
+
+WNM power/current has **not** been measured. SWD was attached for functional
+validation. No claim is made yet that this image beats the 3 mW DTIM baseline,
+and long sleeps beyond DHCP/AP/registration lifetimes were not tested.
+
+### Remaining issue after longer quiet time
+
+A final check about three minutes after the corrected firmware's association
+found a timeout again. This is distinct from the already-fixed chip WNM flag:
+a temporary static neighbor on the AP's actual `br-lan` route immediately
+restored a successful unicast Read with result 0. The entry was then removed.
+Thus short-cycle/Observe tests passed, but reliable ARP/broadcast recovery after
+longer quiet periods is **not yet established**. This is an experimental WNM
+version, not a replacement for the validated ordinary DTIM10 baseline.
+The remaining receive/ARP issue needs further diagnosis; no permanent AP ARP
+workaround or DTIM change is installed.

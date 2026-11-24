@@ -22,6 +22,9 @@
 #include "liblwm2m.h"
 #include "halow_light.h"
 #include "halow_sleep_diag.h"
+#if defined(CONFIG_EZ_CAM_WNM_SLEEP)
+#include "halow_sleep.h"
+#endif
 #ifdef RADAR_HALOW_CAMERA
 #include "halow_camera.h"
 #if defined(CONFIG_EZ_CAM_SENSORS)
@@ -412,6 +415,9 @@ bool lwm2m_session_is_equal(void *a, void *b, void *data) { return a == b; }
 uint8_t lwm2m_buffer_send(void *handle, uint8_t *data, size_t length, void *arg)
 {
 	struct link_session *link = handle;
+#if defined(CONFIG_EZ_CAM_WNM_SLEEP)
+	if (halow_sleep_active()) return COAP_503_SERVICE_UNAVAILABLE;
+#endif
 	if (link->fd < 0 || length > MAX_COAP) return COAP_500_INTERNAL_SERVER_ERROR;
 	halow_sleep_diag_activity();
 #ifdef RADAR_HALOW_COAP_UDP
@@ -437,10 +443,16 @@ uint8_t lwm2m_buffer_send(void *handle, uint8_t *data, size_t length, void *arg)
 static void receive_packet(lwm2m_context_t *ctx, struct link_session *link,
                            uint8_t *packet, size_t length)
 {
+#if defined(CONFIG_EZ_CAM_WNM_SLEEP)
+	halow_sleep_request_begin(link, packet, length);
+#endif
 #if defined(CONFIG_EZ_CAM_SENSORS)
 	halow_time_sync_packet(ctx, packet, length, link);
 #else
 	lwm2m_handle_packet(ctx, packet, length, link);
+#endif
+#if defined(CONFIG_EZ_CAM_WNM_SLEEP)
+	halow_sleep_request_end();
 #endif
 }
 
@@ -555,6 +567,9 @@ static void run(void *unused1, void *unused2, void *unused3)
 		get_object_device(),
 #endif
 		&light, &button,
+#if defined(CONFIG_EZ_CAM_WNM_SLEEP)
+		&halow_sleep,
+#endif
 #ifdef RADAR_HALOW_CAMERA
 		&halow_camera,
 #endif
@@ -581,6 +596,33 @@ static void run(void *unused1, void *unused2, void *unused3)
 #endif
 	atomic_val_t active = 0;
 	for (;;) {
+#if defined(CONFIG_EZ_CAM_WNM_SLEEP)
+		/* Stop sensor clocks before negotiation; preserve context/Observe state.
+		 * A suspended IP iface also blocks independent ARP/DHCP transmissions. */
+		if (halow_sleep_pending() || halow_sleep_active()) {
+#if defined(CONFIG_EZ_CAM_SENSORS)
+			(void)halow_sensors_step(NULL);
+			(void)halow_device_step(NULL);
+#endif
+		}
+		bool was_asleep = halow_sleep_active();
+		int sleep_wait = halow_sleep_step(ctx, (atomic_get(&link_generation) & 1) != 0);
+		if (was_asleep && !halow_sleep_active() && ctx) {
+			/* Publish button/LED changes made locally during the sleep interval. */
+			lwm2m_resource_value_changed(ctx, &light_uri);
+			lwm2m_resource_value_changed(ctx, &button_state_uri);
+			lwm2m_resource_value_changed(ctx, &button_counter_uri);
+			(void)lwm2m_update_registration(ctx, 1, false);
+		}
+		if (halow_sleep_active()) {
+			process_button(NULL); /* Keep local button/LED operation. No CoAP. */
+			struct zsock_pollfd wake = {.fd = wake_fd, .events = ZSOCK_POLLIN};
+			if (zsock_poll(&wake, 1, sleep_wait) > 0) {
+				eventfd_t ticks; eventfd_read(wake_fd, &ticks);
+			}
+			continue;
+		}
+#endif
 		atomic_val_t generation = atomic_get(&link_generation);
 		if (generation != active) {
 			if (link.fd >= 0) zsock_close(link.fd);
@@ -597,6 +639,9 @@ static void run(void *unused1, void *unused2, void *unused3)
 				lwm2m_free(objects[0]);
 				objects[0] = NULL;
 			}
+#if defined(CONFIG_EZ_CAM_WNM_SLEEP)
+			halow_sleep_forget_requests();
+#endif
 			active = generation;
 		}
 		if ((active & 1) && ctx == NULL) {
@@ -639,8 +684,12 @@ static void run(void *unused1, void *unused2, void *unused3)
 		process_button(ctx);
 
 #if defined(CONFIG_EZ_CAM_SENSORS)
-		int sensor_wait = halow_sensors_step(ctx);
-		int clock_wait = halow_device_step(ctx);
+		lwm2m_context_t *sampling_ctx = ctx;
+#if defined(CONFIG_EZ_CAM_WNM_SLEEP)
+		if (halow_sleep_pending()) sampling_ctx = NULL;
+#endif
+		int sensor_wait = halow_sensors_step(sampling_ctx);
+		int clock_wait = halow_device_step(sampling_ctx);
 		halow_sensors_internal_read(true);
 #endif
 		time_t timeout = 300;
@@ -652,6 +701,9 @@ static void run(void *unused1, void *unused2, void *unused3)
 		halow_sensors_internal_read(false);
 		if (sensor_wait >= 0 && (wait_ms < 0 || sensor_wait < wait_ms)) wait_ms = sensor_wait;
 		if (clock_wait >= 0 && (wait_ms < 0 || clock_wait < wait_ms)) wait_ms = clock_wait;
+#endif
+#if defined(CONFIG_EZ_CAM_WNM_SLEEP)
+		if (sleep_wait >= 0 && (wait_ms < 0 || sleep_wait < wait_ms)) wait_ms = sleep_wait;
 #endif
 		struct zsock_pollfd fds[] = {
 			{.fd = wake_fd, .events = ZSOCK_POLLIN},
