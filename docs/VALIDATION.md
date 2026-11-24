@@ -446,7 +446,29 @@ out; later, 16 consecutive reads succeeded without a reset. Gateway logs also
 show a five-second API cooldown after timeouts. These observations do not
 establish reliable sustained downlink delivery or resolve the earlier ARP issue.
 
-Further server-restart, silent-packet-loss and expired-registration sleep tests
-are in progress at this commit. No new physical power result is claimed.
+Restarting the Wakaama gateway service recovered in 43.37 seconds, with the
+context-rebuild counter increasing from 0 to 1. A temporary, camera-only
+firewall rule then dropped CoAP uplinks for 165 seconds (11 packets / 1423
+bytes). The watchdog escalated through another context rebuild and one Wi-Fi
+reconnect. After automatic rule removal, registration and resource reads
+recovered in 2.49 seconds. No credentials or AP settings were changed.
+
+A 310-second WNM cycle outlived the 300-second registration. It slept for
+310000 ms, returned result 0, and replaced the expired registration (context
+rebuild counter 2 to 3; reason 1, expired). Entry took 18 ms and exit 1325 ms;
+the first post-sleep health check completed in 1.08 seconds. The Wi-Fi reconnect
+counter stayed at 1, so this wake used registration recovery without another
+watchdog reconnect. Sleep duration was restored to 60 seconds.
+
+After 125 seconds without API traffic, the client remained online and the
+last successful ACK was eight seconds old, confirming automatic probes
+continued. Context rebuilds stayed at 3 and Wi-Fi reconnects at 1. All final
+watchdog resources were readable and the temporary firewall table was absent.
+The live recovery suite passed; it recorded expected missing-client responses
+during server restart and one resource-read timeout that succeeded on retry.
+The earlier intermittent timeout observations remain relevant: this is recovery
+validation, not a zero-packet-loss guarantee. No new physical power result is
+claimed.
 Build, flash, packet and live-test logs are local under
-`/private/tmp/ezcam-watchdog-review-*`.
+`/private/tmp/ezcam-watchdog-review-*`; firmware and collected logs are also
+saved in ignored `artifacts/ez-cam01-watchdog/`.

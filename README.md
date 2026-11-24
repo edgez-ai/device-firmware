@@ -36,7 +36,7 @@ Dependencies are local submodules, with no sibling-repository lookup:
 
 | Dependency | Pinned revision |
 | --- | --- |
-| EdgeZ `mm-iot-zephyr` | `31e94bda2b18709b4d5d088f8462670bd079da0e` |
+| EdgeZ `mm-iot-zephyr` | `7878f9dfb71875f247d76eedba9d683c43ce79a8` |
 | EdgeZ Wakaama client core | `04e18bbcc561d820bd4000014fb60cd4ed9acbed` |
 | Seeed PlatformIO platform | `c41f41ec51c8cf91550adc8b1487e1b093c8605c` |
 | Zephyr / Arm toolchain | 4.4.0 / 14.2.1, as pinned in `firmware/platformio.ini` |
