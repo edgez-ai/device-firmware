@@ -30,7 +30,7 @@
 LOG_MODULE_REGISTER(radar, CONFIG_RADAR_LOG_LEVEL);
 
 
-static K_THREAD_STACK_DEFINE(radar_stack, CONFIG_RADAR_THREAD_STACK_SIZE);
+static k_thread_stack_t *radar_stack;
 static struct k_thread radar_thread;
 static K_MUTEX_DEFINE(status_lock);
 static struct radar_status status;
@@ -402,13 +402,17 @@ int radar_app_start(void)
 		return rc;
 	}
 #endif
+	radar_stack = k_thread_stack_alloc(CONFIG_RADAR_THREAD_STACK_SIZE, 0);
+	if (!radar_stack) return -ENOMEM;
 #if !defined(CONFIG_RADAR_SIMULATE_PRESENCE)
 	rc = radar_link_init();
 	if (rc != 0) {
+		(void)k_thread_stack_free(radar_stack);
+		radar_stack = NULL;
 		return rc;
 	}
 #endif
-	k_thread_create(&radar_thread, radar_stack, K_THREAD_STACK_SIZEOF(radar_stack),
+	k_thread_create(&radar_thread, radar_stack, CONFIG_RADAR_THREAD_STACK_SIZE,
 			radar_thread_fn, NULL, NULL, NULL, CONFIG_RADAR_THREAD_PRIORITY, 0,
 			K_NO_WAIT);
 	k_thread_name_set(&radar_thread, "radar");

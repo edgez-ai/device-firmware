@@ -18,6 +18,7 @@
 
 #include "radar_link.h"
 #include "hardware_uart.h"
+#include "hardware_memory.h"
 
 LOG_MODULE_REGISTER(radar_link, CONFIG_RADAR_LOG_LEVEL);
 
@@ -46,7 +47,7 @@ static K_SEM_DEFINE(wake_sem, 0, 1);
 static bool wake_irq;
 #endif
 
-RING_BUF_DECLARE(radar_rx_ring, CONFIG_RADAR_UART_RX_BUFFER_SIZE);
+static struct ring_buf radar_rx_ring;
 static K_SEM_DEFINE(rx_sem, 0, 1);
 static struct k_spinlock rx_lock;
 static uint8_t capture[64];
@@ -353,6 +354,9 @@ int radar_link_power_cycle(void)
 int radar_link_init(void)
 {
 	int rc;
+	uint8_t *rx = hardware_memory_uart(HARDWARE_RADAR);
+	if (!rx) return -ENOMEM;
+	ring_buf_init(&radar_rx_ring, CONFIG_RADAR_UART_RX_BUFFER_SIZE, rx);
 
 	if (!gpio_is_ready_dt(&power)) {
 		LOG_ERR("radar UART or GPIO not ready");

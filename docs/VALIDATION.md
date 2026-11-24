@@ -588,3 +588,32 @@ RTT, console and logging are disabled in the generated configuration.
 - Build and host validation only. This image was not flashed and factory
   data was not changed. Physical peripheral behavior, runtime heap/stack
   headroom and power consumption still require on-device verification.
+
+
+## 2026-11-25 — Allocate peripheral memory for the selected hardware
+
+Built `pio run -e ez-dev54` after replacing the static JPEG cache and UART
+byte arrays with a selected boot-lifetime workspace from Newlib's heap.
+Base allocates no workspace; camera allocates 66565 bytes; radar allocates
+1024 bytes (configured RX capacity); GPS allocates 512 bytes. Only radar
+allocates its thread stack, using Zephyr's dynamic stack API/kernel heap.
+The common radio/kernel heap reservation is unchanged.
+
+- Linker static RAM: **186488 / 262144 bytes (71.14%)**, previously
+  258672 (98.68%): **72184 bytes** freed from unconditional allocation.
+- Static FLASH: 992312 bytes / 1392 KiB.
+- The link leaves 75656 bytes for Newlib's heap before runtime allocations.
+  Camera's workspace consumes 66565 bytes plus allocator overhead, so the
+  lower static percentage does not represent total camera runtime usage.
+- ELF checks confirm JPEG storage and radar stack symbols are 4-byte
+  pointers, and all changed peripheral objects were compiled after source
+  changes. RTT, console and logging remain disabled.
+- **28 host tests passed**, including all mode workspace sizes, ownership
+  rejection, image/RX boundaries, stable repeated initialization, allocation
+  failure/retry and GPS allocation failure before touching UART/power.
+- Camera storage remains stable for boot-long CoAP Block2 borrowing.
+  Uninitialized camera free/serialization paths handle a NULL cache safely.
+- HEX SHA256: `01016b49732e277610b73b9afde6dd1db9b3b8fcdeb9e7e5986183b6ec9a553b`. Ignored local artifacts:
+  `artifacts/ez-dev54-hardware-memory/`.
+- Not flashed. Actual camera capture/transfer, radar operation and shared
+  kernel-heap/stack high-water marks still require on-device testing.

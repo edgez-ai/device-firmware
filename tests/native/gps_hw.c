@@ -1,12 +1,13 @@
 #include "gps_hw_shim.h"
 #include "gps_hw.h"
+#include "hardware_memory.h"
 #include <assert.h>
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 struct device gps_uart_device;
 struct pinctrl_dev_config gps_pins;
-static bool power,asleep,rx,isr,controller_active;
+static bool power,asleep,rx,isr,controller_active,no_workspace;
 static int init_count,wakes,init_error,callback_error,resume_error;
 static void (*callback)(const struct device *,void *);
 static struct k_work *pending;
@@ -48,6 +49,11 @@ int uart_fifo_read(const struct device *d,uint8_t *data,int length) {
 }
 int main(int argc,char **argv) {
  assert(argc==2);int test=atoi(argv[1]);
+ if(test==5) {
+  no_workspace=true;
+  assert(gps_hw_init()==-ENOMEM && !power && !asleep && !rx && init_count==0);
+  puts("GPS allocation failure leaves UART and supply untouched");return 0;
+ }
  assert(gps_hw_init()==0 && !power && asleep && init_count==0 && wakes==0);
  if(test==2)init_error=-EIO;
  if(test==3)callback_error=-EIO;
@@ -68,3 +74,6 @@ int main(int argc,char **argv) {
 }
 
 int hardware_uart_init(void) { return device_init(&gps_uart_device); }
+
+static uint8_t gps_workspace[512];
+uint8_t *hardware_memory_uart(enum hardware_mode expected) { assert(expected == HARDWARE_GPS); return no_workspace ? NULL : gps_workspace; }

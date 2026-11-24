@@ -1,4 +1,5 @@
 #include "hardware_uart.h"
+#include "hardware_memory.h"
 /* SPDX-License-Identifier: Apache-2.0 */
 #if defined(CONFIG_EZ_DEV54_UART_GPS)
 #include "gps_hw.h"
@@ -16,7 +17,7 @@ static const struct device *const uart = DEVICE_DT_GET(DT_ALIAS(gps0));
 static const struct gpio_dt_spec power = GPIO_DT_SPEC_GET(DT_PATH(zephyr_user), gps_power_gpios);
 PINCTRL_DT_DEV_CONFIG_DECLARE(DT_ALIAS(gps0));
 static const struct pinctrl_dev_config *const pins = PINCTRL_DT_DEV_CONFIG_GET(DT_ALIAS(gps0));
-RING_BUF_DECLARE(gps_rx, 512);
+static struct ring_buf gps_rx;
 static struct k_spinlock lock;
 static bool configured;
 static void wake_handler(struct k_work *work) { ARG_UNUSED(work); halow_light_wake(); }
@@ -51,6 +52,9 @@ int gps_hw_stop(void)
 }
 int gps_hw_init(void)
 {
+    uint8_t *rx = hardware_memory_uart(HARDWARE_GPS);
+    if (!rx) return -ENOMEM;
+    ring_buf_init(&gps_rx, HARDWARE_GPS_UART_SIZE, rx);
     if (!gpio_is_ready_dt(&power)) return -ENODEV;
     int rc = gpio_pin_configure_dt(&power, GPIO_OUTPUT_INACTIVE);
     return rc ? rc : gps_hw_stop();

@@ -19,6 +19,7 @@ extern struct pinctrl_dev_config gps_pins;
 #define PINCTRL_STATE_SLEEP 1
 struct ring_buf { uint8_t data[512]; size_t count; };
 #define RING_BUF_DECLARE(n,s) struct ring_buf n
+static inline void ring_buf_init(struct ring_buf *r, uint32_t size, uint8_t *data) { (void)size; (void)data; r->count=0; }
 static inline uint32_t ring_buf_put(struct ring_buf *r,const uint8_t *p,uint32_t n) {
  if(n>512-r->count)n=512-r->count;memcpy(r->data+r->count,p,n);r->count+=n;return n;
 }

@@ -22,7 +22,7 @@ class Gps(unittest.TestCase):
                             '-I'+str(ROOT/'tests/native'), '-I'+str(ROOT/'firmware/src'),
                             '-include', str(ROOT/'tests/native/gps_hw_shim.h'),
                             str(source), str(ROOT/'tests/native/gps_hw.c'), '-o', str(binary)], check=True)
-            for case in range(1, 5):
+            for case in range(1, 6):
                 with self.subTest(case=case):
                     subprocess.run([str(binary), str(case)], check=True)
 

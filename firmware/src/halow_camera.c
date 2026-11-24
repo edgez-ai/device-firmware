@@ -1,4 +1,5 @@
 #include "hardware_uart.h"
+#include "hardware_memory.h"
 /* VC0706 capture and legacy LwM2M Camera object 5001 over HaLow. */
 #ifdef RADAR_HALOW_CAMERA
 #include <errno.h>
@@ -23,9 +24,9 @@ LOG_MODULE_REGISTER(halow_camera, CONFIG_RADAR_LOG_LEVEL);
 #define IMAGE_LENGTH 2
 #define RESOLUTION 3
 #define BUFFER_SIZE 5
-#define JPEG_CAPACITY (64U * 1024U)
+#define JPEG_CAPACITY HARDWARE_CAMERA_IMAGE_CAPACITY
 #define JPEG_TLV_HEADER_SHORT 4U
-#define JPEG_TLV_HEADER_MAX 5U
+#define JPEG_TLV_HEADER_MAX HARDWARE_CAMERA_HEADER_SIZE
 #define CAMERA_CROP_SOURCE_WIDTH 1024U
 #define CAMERA_CROP_SOURCE_HEIGHT 768U
 
@@ -35,11 +36,11 @@ static const struct gpio_dt_spec power =
 PINCTRL_DT_DEV_CONFIG_DECLARE(DT_ALIAS(camera0));
 static const struct pinctrl_dev_config *const camera_pins =
 	PINCTRL_DT_DEV_CONFIG_GET(DT_ALIAS(camera0));
-RING_BUF_DECLARE(rx_ring, 1024);
+static struct ring_buf rx_ring;
 static K_SEM_DEFINE(rx_ready, 0, 1);
 /* Reserve a resource TLV header before the JPEG so Block2 can borrow it. */
-static uint8_t jpeg_storage[JPEG_TLV_HEADER_MAX + JPEG_CAPACITY];
-static uint8_t *const jpeg = &jpeg_storage[JPEG_TLV_HEADER_MAX];
+static uint8_t *jpeg_storage;
+static uint8_t *jpeg;
 static size_t jpeg_length;
 struct camera_resolution {
 	const char *name;
@@ -120,6 +121,11 @@ static int camera_standby(void)
 
 int halow_camera_start(void)
 {
+	jpeg_storage = hardware_memory_image();
+	uint8_t *rx = hardware_memory_uart(HARDWARE_CAMERA);
+	if (!jpeg_storage || !rx) return -ENOMEM;
+	jpeg = jpeg_storage + JPEG_TLV_HEADER_MAX;
+	ring_buf_init(&rx_ring, HARDWARE_CAMERA_UART_SIZE, rx);
 	if (!gpio_is_ready_dt(&power)) return -ENODEV;
 	int rc = gpio_pin_configure_dt(&power, GPIO_OUTPUT_INACTIVE);
 
@@ -441,7 +447,7 @@ lwm2m_object_t halow_camera = {
  */
 void halow_camera_free(void *value)
 {
-	if (value != jpeg && value != jpeg - JPEG_TLV_HEADER_SHORT && value != jpeg_storage) {
+	if (!jpeg || (value != jpeg && value != jpeg - JPEG_TLV_HEADER_SHORT && value != jpeg_storage)) {
 		free(value);
 	}
 }
@@ -452,7 +458,7 @@ int __real_lwm2m_data_serialize(lwm2m_uri_t *uri, int size, lwm2m_data_t *data,
 int __wrap_lwm2m_data_serialize(lwm2m_uri_t *uri, int size, lwm2m_data_t *data,
 				lwm2m_media_type_t *format, uint8_t **buffer)
 {
-	if (size == 1 && data->type == LWM2M_TYPE_OPAQUE &&
+	if (jpeg && size == 1 && data->type == LWM2M_TYPE_OPAQUE &&
 	    data->value.asBuffer.buffer == jpeg) {
 		if (*format == LWM2M_CONTENT_OPAQUE) {
 			*buffer = jpeg;

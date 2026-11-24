@@ -26,6 +26,30 @@ Radar presence `/3302/0/5500` and distance `/3330/0/5700`, camera resources,
 and GPS objects are registered only for the selected mode. Object 31029 is
 always available. UART pin routing and baud are chosen before deferred init.
 
+## Memory allocation
+
+The selected mode allocates a boot-lifetime workspace from the C library heap:
+
+| Hardware | Workspace | Additional thread stack |
+| --- | --- | --- |
+| Base | None | None |
+| Camera | 65,541-byte JPEG/TLV storage + 1,024-byte UART RX | None |
+| Radar | Configured UART RX size (default 1,024 bytes) | 4,096-byte usable stack, plus platform overhead, from the kernel heap |
+| GPS | 512-byte UART RX | None |
+
+No JPEG storage is allocated in base, radar or GPS mode. No radar stack is
+allocated outside radar mode. The camera cache remains allocated while that
+mode is active so CoAP Block2 can borrow a stable image without copying it.
+Changing hardware still saves the setting and reboots; buffers are never
+reassigned while UART interrupts or image transfers might reference them.
+The small object/driver state and common radio/BLE/network pools remain shared.
+
+The C library heap uses remaining RAM, so this does not introduce another
+fixed 64 KiB reservation. Linker RAM percentages show static allocation;
+camera mode still needs its JPEG/RX allocation at runtime. If the workspace
+cannot be allocated, the peripheral stays unavailable and common services
+continue, allowing a saved hardware selection to be changed through LwM2M.
+
 ## LwM2M configuration
 
 | Path | Access | Meaning |

@@ -239,5 +239,6 @@ endif()
 if(EZ_DEV54_UNIFIED)
   target_sources(app PRIVATE "${RADAR_NRF54_DIR}/src/hardware_config.c"
     "${RADAR_NRF54_DIR}/src/hardware_uart.c"
+    "${RADAR_NRF54_DIR}/src/hardware_memory.c"
     "${RADAR_NRF54_DIR}/src/halow_hardware.c")
 endif()

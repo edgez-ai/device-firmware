@@ -5,6 +5,7 @@
 #include "halow_sta.h"
 #include "hardware_config.h"
 #include "hardware_uart.h"
+#include "hardware_memory.h"
 #include "ble_prov.h"
 #include "radar_app.h"
 #include "radar_mqtt.h"
@@ -18,6 +19,8 @@ int main(void)
 {
 	(void)hardware_config_init();
 	if (hardware_uart_prepare()) return -1;
+	int memory_rc = hardware_memory_init();
+	if (memory_rc) LOG_ERR("Peripheral memory allocation failed: %d", memory_rc);
 #if defined(CONFIG_EZ_DEV54_BLE_PROV)
 	int prov_rc = ez_prov_init();
 	if (prov_rc) LOG_ERR("Provisioning init failed: %d", prov_rc);
