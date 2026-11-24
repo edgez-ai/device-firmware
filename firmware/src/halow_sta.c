@@ -74,7 +74,7 @@ static void request_connect(struct k_work *work)
 		return;
 	}
 
-#if defined(CONFIG_EZ_CAM_BLE_PROV)
+#if defined(CONFIG_EZ_DEV54_BLE_PROV)
 	char ssid[33], password[64];
 	if (!ez_prov_get_credentials(ssid, password)) return;
 #else
@@ -171,7 +171,7 @@ static void on_wifi_event(struct net_mgmt_event_callback *cb, uint64_t event,
 #endif
 		} else {
 			associated = false;
-#if defined(CONFIG_EZ_CAM_BLE_PROV)
+#if defined(CONFIG_EZ_DEV54_BLE_PROV)
 			ez_prov_wifi_failed(result ? result->status : -EIO);
 			if (!ez_prov_retry_allowed()) return;
 #endif
@@ -209,7 +209,7 @@ static void on_ipv4_event(struct net_mgmt_event_callback *cb, uint64_t event,
 		halow_light_link_changed(false);
 #endif
 	} else if (event == NET_EVENT_IPV4_DHCP_BOUND) {
-#if defined(CONFIG_EZ_CAM_BLE_PROV)
+#if defined(CONFIG_EZ_DEV54_BLE_PROV)
 		ez_prov_wifi_bound(iface);
 #endif
 		struct net_in_addr current = net_if_ipv4_get_gw(iface);
@@ -237,13 +237,13 @@ bool halow_sta_is_online(void)
 
 int halow_sta_start(void)
 {
-#if defined(RADAR_HALOW_LIGHT) && !defined(CONFIG_EZ_CAM_BLE_PROV)
+#if defined(RADAR_HALOW_LIGHT) && !defined(CONFIG_EZ_DEV54_BLE_PROV)
 	if (strlen(CONFIG_RADAR_HALOW_PASSWORD) < 8U) {
 		LOG_ERR("HaLow Light Control requires a configured WPA3 password");
 		return -EINVAL;
 	}
 #endif
-	if (!IS_ENABLED(CONFIG_EZ_CAM_BLE_PROV) && strlen(CONFIG_RADAR_HALOW_SSID) == 0U) {
+	if (!IS_ENABLED(CONFIG_EZ_DEV54_BLE_PROV) && strlen(CONFIG_RADAR_HALOW_SSID) == 0U) {
 		LOG_WRN("CONFIG_RADAR_HALOW_SSID is empty: HaLow stays idle");
 		return -ENOTSUP;
 	}
@@ -281,7 +281,7 @@ static void reconnect_handler(struct k_work *work)
 K_WORK_DEFINE(reconnect_work, reconnect_handler);
 int halow_sta_reconnect(void)
 {
-#if defined(CONFIG_EZ_CAM_BLE_PROV)
+#if defined(CONFIG_EZ_DEV54_BLE_PROV)
 	char ssid[33], password[64];
 	if (!ez_prov_get_credentials(ssid, password)) return -EAGAIN;
 #else

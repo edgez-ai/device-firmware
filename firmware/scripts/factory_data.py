@@ -20,7 +20,11 @@ import zlib
 ADDRESS, PAGE_SIZE = 0x165000, 4096
 FORMAT = '<IHH33s32s32s3s33sB65sI'
 RECORD_SIZE = struct.calcsize(FORMAT)
+# Versioned KDF domain, retained so the product rename does not change PoPs.
 LABEL = b'EZ-CAM01 BLE provisioning PoP v1'
+HARDWARE = ('base', 'camera', 'radar', 'gps')
+HARDWARE_OFFSET = 256
+HARDWARE_MAGIC = 0x57485a45
 
 
 def secret_write(path, data):
@@ -70,6 +74,10 @@ def decode(data):
     record = dict(serial=string(serial), country=string(country), ssid=string(ssid),
                   password=string(password), channel=channel, public_key=public, private_key=private)
     validate(record)
+    extension = data[HARDWARE_OFFSET:HARDWARE_OFFSET+16]
+    magic, ver, size, mode, reserved, crc = struct.unpack('<IHHB3sI', extension)
+    if (magic, ver, size) == (HARDWARE_MAGIC, 1, 16) and mode < len(HARDWARE) and reserved == bytes(3) and zlib.crc32(extension[:12]) == crc:
+        record['hardware'] = HARDWARE[mode]
     return record
 
 
@@ -79,7 +87,18 @@ def encode(record, original=None):
                       record['public_key'], record['private_key'], record['country'].encode(),
                       record['ssid'].encode(), record['channel'], record['password'].encode(), 0)
     raw = raw[:-4] + struct.pack('<I', zlib.crc32(raw[:-4]))
-    return raw + (original[RECORD_SIZE:] if original is not None else b'\xff' * (PAGE_SIZE-RECORD_SIZE))
+    page = bytearray(raw + (original[RECORD_SIZE:] if original is not None else b'\xff' * (PAGE_SIZE-RECORD_SIZE)))
+    if 'hardware' in record:
+        old = page[HARDWARE_OFFSET:HARDWARE_OFFSET+16]
+        if old not in (bytes(16), b'\xff'*16) and struct.unpack('<I', old[:4])[0] != HARDWARE_MAGIC:
+            raise ValueError('Hardware extension overlaps unknown factory data')
+        if record['hardware'] is None:
+            extension = b'\xff'*16
+        else:
+            prefix = struct.pack('<IHHB3s', HARDWARE_MAGIC, 1, 16, HARDWARE.index(record['hardware']), bytes(3))
+            extension = prefix + struct.pack('<I', zlib.crc32(prefix))
+        page[HARDWARE_OFFSET:HARDWARE_OFFSET+16] = extension
+    return bytes(page)
 
 
 def ble_qr(record):
@@ -90,7 +109,7 @@ def ble_qr(record):
 def summary(record):
     # Never expose credentials, PoP or private key on stdout.
     return dict(serial=record['serial'], country=record['country'], channel=record['channel'],
-                factory_wifi=bool(record['ssid']), public_key_sha256=hashlib.sha256(record['public_key']).hexdigest(),
+                factory_wifi=bool(record['ssid']), hardware=record.get('hardware', 'base (default)'), public_key_sha256=hashlib.sha256(record['public_key']).hexdigest(),
                 ble_name=ble_qr(record)['name'])
 
 
@@ -102,7 +121,7 @@ def generate_identity():
 
 def run_jlink(script, serial, log):
     executable = shutil.which('JLinkExe') or '/usr/local/bin/JLinkExe'
-    with tempfile.TemporaryDirectory(prefix='ezcam-factory-') as folder:
+    with tempfile.TemporaryDirectory(prefix='ezdev54-factory-') as folder:
         commands = Path(folder) / 'factory.jlink'
         commands.write_text(script)
         command = [executable, '-device', 'NRF54L15_M33', '-if', 'SWD', '-speed', '4000',
@@ -128,7 +147,7 @@ def flash(args):
         raise ValueError('Unsupported character in backup path')
     backup = folder / f'factory-{stamp}-before.bin'
     # J-Link opens savebin itself; the private temporary directory protects it.
-    with tempfile.TemporaryDirectory(prefix='ezcam-factory-read-') as temp:
+    with tempfile.TemporaryDirectory(prefix='ezdev54-factory-read-') as temp:
         saved = Path(temp) / 'before.bin'
         run_jlink(f'h\nsavebin "{saved}" 0x{ADDRESS:x} 0x{PAGE_SIZE:x}\ng\nexit\n', args.serial, folder / f'{stamp}-read.log')
         before = saved.read_bytes()
@@ -162,6 +181,9 @@ def main():
             cmd.add_argument('--input', type=Path, required=True)
             cmd.add_argument('--country')
             cmd.add_argument('--channel', type=int)
+        hardware = cmd.add_mutually_exclusive_group()
+        hardware.add_argument('--hardware', choices=HARDWARE)
+        hardware.add_argument('--clear-hardware', action='store_true')
         cmd.add_argument('--ssid')
         cmd.add_argument('--password-file', type=Path, help='UTF-8 WPA3 password file; never place secrets on the command line')
         cmd.add_argument('--clear-wifi', action='store_true')
@@ -193,6 +215,8 @@ def main():
             original = args.input.read_bytes(); record = decode(original)
             if args.country: record['country'] = args.country
             if args.channel is not None: record['channel'] = args.channel
+        if args.hardware is not None: record['hardware'] = args.hardware
+        if args.clear_hardware: record['hardware'] = None
         if args.clear_wifi:
             if args.ssid is not None or args.password_file is not None: raise ValueError('--clear-wifi conflicts with Wi-Fi options')
             record['ssid'] = record['password'] = ''

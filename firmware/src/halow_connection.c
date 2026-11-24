@@ -6,8 +6,8 @@
 #include <limits.h>
 #include <string.h>
 #include <zephyr/kernel.h>
-#define PROBE_MS ((int64_t)CONFIG_EZ_CAM_CONNECTION_PROBE_SECONDS * 1000)
-#define RESPONSE_MS ((int64_t)CONFIG_EZ_CAM_CONNECTION_RESPONSE_SECONDS * 1000)
+#define PROBE_MS ((int64_t)CONFIG_EZ_DEV54_CONNECTION_PROBE_SECONDS * 1000)
+#define RESPONSE_MS ((int64_t)CONFIG_EZ_DEV54_CONNECTION_RESPONSE_SECONDS * 1000)
 #define RECONNECT_MS 120000
 #define MAX_BACKOFF_MS 300000
 /* Object state: offline, registering, online, probing, re-registering,
@@ -130,8 +130,8 @@ static uint8_t read_watchdog(lwm2m_context_t *ctx, uint16_t instance, int *count
 {
     uint8_t rc = discover(ctx, instance, count, data, object);
     if (rc != COAP_205_CONTENT) return rc;
-    const int64_t values[] = { state, CONFIG_EZ_CAM_CONNECTION_PROBE_SECONDS,
-        CONFIG_EZ_CAM_CONNECTION_RESPONSE_SECONDS, last_ack_ms < 0 ? -1 : (k_uptime_get()-last_ack_ms)/1000,
+    const int64_t values[] = { state, CONFIG_EZ_DEV54_CONNECTION_PROBE_SECONDS,
+        CONFIG_EZ_DEV54_CONNECTION_RESPONSE_SECONDS, last_ack_ms < 0 ? -1 : (k_uptime_get()-last_ack_ms)/1000,
         registration_resets, wifi_reconnects, reason, lifetime };
     for (int i = 0; i < *count; ++i) lwm2m_data_encode_int(values[(*data)[i].id], &(*data)[i]);
     return COAP_205_CONTENT;

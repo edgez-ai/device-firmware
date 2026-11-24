@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: Apache-2.0 */
-#if defined(CONFIG_EZ_CAM_UART_GPS)
+#if defined(CONFIG_EZ_DEV54_UART_GPS)
 #include "halow_gps.h"
 #include "gps_hw.h"
 #include "gps_nmea.h"
@@ -13,7 +13,7 @@ static struct gps_fix fix;
 static bool valid, powered, ready;
 static int last_result;
 static uint32_t fixes;
-static int64_t timeout_s = CONFIG_EZ_CAM_GPS_FIX_TIMEOUT_SECONDS, deadline, fix_at;
+static int64_t timeout_s = CONFIG_EZ_DEV54_GPS_FIX_TIMEOUT_SECONDS, deadline, fix_at;
 static char line[128];
 static size_t used;
 static void changed(lwm2m_context_t *ctx, uint16_t object, uint16_t resource)

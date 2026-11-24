@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
-#ifndef EZ_CAM_GPS_HW_H
-#define EZ_CAM_GPS_HW_H
+#ifndef EZ_DEV54_GPS_HW_H
+#define EZ_DEV54_GPS_HW_H
 #include <stddef.h>
 #include <stdint.h>
 int gps_hw_init(void);

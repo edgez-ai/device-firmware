@@ -10,7 +10,7 @@ static int64_t now = 1000;
 static struct net_if iface;
 static bool missing_iface;
 static int suspend_error, enter_error, exit_error, enters, exits, resumes;
-#if defined(CONFIG_EZ_CAM_WNM_PARK_PINS)
+#if defined(CONFIG_EZ_DEV54_WNM_PARK_PINS)
 static bool pins_parked;
 static int park_error, restore_error;
 int halow_wnm_pins_park(void) {
@@ -33,7 +33,7 @@ int net_if_suspend(struct net_if *p) {
 int net_if_resume(struct net_if *p) { assert(p == &iface && p->suspended); p->suspended = 0; ++resumes; return 0; }
 int mmwlan_set_wnm_sleep_enabled_ext(const struct mmwlan_set_wnm_sleep_enabled_args *args) {
     assert(args->chip_powerdown_enabled && iface.suspended);
-#if defined(CONFIG_EZ_CAM_WNM_PARK_PINS)
+#if defined(CONFIG_EZ_DEV54_WNM_PARK_PINS)
     /* Entry negotiates before parking; exit restores before any SDK access. */
     assert(!pins_parked);
 #endif
@@ -132,7 +132,7 @@ int main(void) {
     assert(exec(&ctx) == COAP_204_CHANGED && halow_sleep_pending());
     assert(halow_sleep_step(&ctx,false) == -1);
     halow_sleep_request_end();
-#if defined(CONFIG_EZ_CAM_WNM_PARK_PINS)
+#if defined(CONFIG_EZ_DEV54_WNM_PARK_PINS)
     /* A failed park rolls back an already accepted WNM before ungating IP. */
     park_error = -EBUSY; prior = exits;
     assert(halow_wnm_enter() == -EBUSY && !iface.suspended && !pins_parked);

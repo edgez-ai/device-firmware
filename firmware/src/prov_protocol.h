@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
-#ifndef EZ_CAM_PROV_PROTOCOL_H
-#define EZ_CAM_PROV_PROTOCOL_H
+#ifndef EZ_DEV54_PROV_PROTOCOL_H
+#define EZ_DEV54_PROV_PROTOCOL_H
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>

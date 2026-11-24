@@ -1,7 +1,7 @@
 # BLE provisioning and factory data
 
-Build `pio run -e ez-cam01-ble-prov` from `firmware/`. This optional profile
-adds provisioning without changing the existing `ez-cam01` baseline. It uses
+Build `pio run -e ez-dev54` from `firmware/`. The unified firmware includes
+BLE provisioning. It uses
 the Espressif ESP BLE Prov app's standard service, endpoint descriptors and
 Security 1 protocol (X25519, SHA256 proof of possession, AES-256-CTR). Security
 0 and BLE pairing are not enabled. Tracker-specific MQTT/device-config
@@ -28,7 +28,7 @@ channel field is retained for tracker record compatibility. AP DTIM10,
 parking, and the 64 KiB JPEG cache are retained. Runtime logs, console and RTT
 remain disabled. BLE is only an onboarding activity, not a standby service.
 
-The BLE camera profile defers UART22 driver initialization until the first
+When camera mode is selected, UART22 driver initialization is deferred until the first
 Capture execute. Boot only parks TX/RX and turns camera power off; it does
 not initialize the UART just to suspend it. After capture, the same normal
 IRQ-disable / suspend / sleep-pinctrl shutdown path is used. This fixes the
@@ -57,7 +57,7 @@ Never commit them or publish them as firmware build artifacts.
 ```sh
 # A new device identity (requires OpenSSL for X25519 key generation).
 python3 firmware/scripts/factory_data.py create \
-  --serial EZ-CAM01-000001 --country EU --clear-wifi \
+  --serial EZ-DEV54-000001 --country EU --clear-wifi \
   --output artifacts/factory-new.bin
 
 # Update an existing backup, preserving serial, identity keys and page tail.
@@ -94,6 +94,13 @@ stable when country or Wi-Fi is updated. The QR JSON contains the standard
 the official app, or enter its PoP manually. Factory private keys are never
 sent over BLE. No per-device PoP needs to be compiled into firmware.
 
+The EZ-DEV54 rename preserves this original KDF label, the `PROV_CAM` BLE
+name prefix and the on-flash `ezcam/wifi` settings key. They are versioned
+compatibility identifiers, not the current product name. Existing factory
+identities, QR labels, PoPs and saved Wi-Fi profiles remain valid after updating
+to the renamed firmware. Do not substitute the new product name into the PoP
+derivation label.
+
 ## Verification
 
 Host interoperability tests use Espressif's unmodified Python Security 1
@@ -104,9 +111,9 @@ same C record reader and compare it with the host writer.
 python3 tests/test_esp_prov.py
 python3 tests/test_factory_data.py
 # Optional real device test, using approved local AP credentials.
-python3 -m venv /tmp/ezcam-ble
-/tmp/ezcam-ble/bin/pip install -r tests/requirements.txt
-/tmp/ezcam-ble/bin/python tests/provision_ble.py \
+python3 -m venv /tmp/ezdev54-ble
+/tmp/ezdev54-ble/bin/pip install -r tests/requirements.txt
+/tmp/ezdev54-ble/bin/python tests/provision_ble.py \
   --factory-image artifacts/factory-eu.bin --scan
 ```
 
@@ -114,3 +121,5 @@ The live helper reads the AP password from ignored
 `firmware/zephyr/halowlink2-secrets.conf`; it never prints it or the PoP.
 `--check-only` authenticates without reading or applying AP credentials.
 See [validation results](VALIDATION.md) for hardware results and limitations.
+
+External hardware factory flags and persistent overrides are documented in [hardware selection](VARIANTS.md). The default without either is base.

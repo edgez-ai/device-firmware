@@ -20,6 +20,18 @@ bool ez_factory_has_wifi(const struct ez_factory_data *d)
 {
 	return d && d->ssid[0] && d->password[0];
 }
+int ez_factory_hardware_parse(const uint8_t *page, size_t size, uint8_t *mode)
+{
+	if (!page || !mode) return -EINVAL;
+	if (size < EZ_FACTORY_HARDWARE_OFFSET + EZ_FACTORY_HARDWARE_SIZE) return -ENOENT;
+	const uint8_t *p = page + EZ_FACTORY_HARDWARE_OFFSET;
+	if (le32(p) == UINT32_MAX || le32(p) == 0) return -ENOENT;
+	if (le32(p) != 0x57485a45U || le16(p + 4) != 1 || le16(p + 6) != 16 ||
+	    le32(p + 12) != crc32(p, 12)) return -EBADMSG;
+	if (p[8] > 3 || p[9] || p[10] || p[11]) return -EINVAL;
+	*mode = p[8];
+	return 0;
+}
 int ez_factory_parse(const uint8_t *p, size_t size, struct ez_factory_data *d)
 {
 	if (!p || !d || size < EZ_FACTORY_RECORD_SIZE) return -EINVAL;

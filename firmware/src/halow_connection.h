@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
-#ifndef EZ_CAM_HALOW_CONNECTION_H
-#define EZ_CAM_HALOW_CONNECTION_H
+#ifndef EZ_DEV54_HALOW_CONNECTION_H
+#define EZ_DEV54_HALOW_CONNECTION_H
 #include "liblwm2m.h"
 #include <stdbool.h>
 enum halow_connection_action { HALOW_CONN_NONE, HALOW_CONN_UPDATE, HALOW_CONN_REGISTER, HALOW_CONN_RECONNECT };

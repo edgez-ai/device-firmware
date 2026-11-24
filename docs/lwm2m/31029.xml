@@ -1,0 +1,86 @@
+<?xml version='1.0' encoding='utf-8'?>
+<LWM2M xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://openmobilealliance.org/tech/profiles/LWM2M.xsd">
+  <Object ObjectType="MODefinition">
+    <Name>EdgeZ External Hardware</Name>
+    <Description1>Persistent runtime peripheral selection. Saved override takes priority over factory flag and base fallback. Changes activate after reboot.</Description1>
+    <ObjectID>31029</ObjectID>
+    <ObjectURN>urn:oma:lwm2m:x:31029</ObjectURN>
+    <LWM2MVersion>1.1</LWM2MVersion>
+    <ObjectVersion>1.0</ObjectVersion>
+    <MultipleInstances>Single</MultipleInstances>
+    <Mandatory>Optional</Mandatory>
+    <Resources>
+      <Item ID="0">
+        <Name>Desired Hardware</Name>
+        <Operations>RW</Operations>
+        <MultipleInstances>Single</MultipleInstances>
+        <Mandatory>Mandatory</Mandatory>
+        <Type>Integer</Type>
+        <RangeEnumeration />
+        <Units />
+        <Description>0 base, 1 VC0706 camera, 2 IWRL6432 radar, 3 L76K GPS. Persist then reboot after two seconds when changed.</Description>
+      </Item>
+      <Item ID="1">
+        <Name>Active Hardware</Name>
+        <Operations>R</Operations>
+        <MultipleInstances>Single</MultipleInstances>
+        <Mandatory>Mandatory</Mandatory>
+        <Type>Integer</Type>
+        <RangeEnumeration />
+        <Units />
+        <Description>Hardware selected at boot: 0..3.</Description>
+      </Item>
+      <Item ID="2">
+        <Name>Factory Hardware</Name>
+        <Operations>R</Operations>
+        <MultipleInstances>Single</MultipleInstances>
+        <Mandatory>Mandatory</Mandatory>
+        <Type>Integer</Type>
+        <RangeEnumeration />
+        <Units />
+        <Description>Factory type 0..3, or -1 if missing or invalid.</Description>
+      </Item>
+      <Item ID="3">
+        <Name>Selection Source</Name>
+        <Operations>R</Operations>
+        <MultipleInstances>Single</MultipleInstances>
+        <Mandatory>Mandatory</Mandatory>
+        <Type>Integer</Type>
+        <RangeEnumeration />
+        <Units />
+        <Description>Desired selection source: 0 default, 1 factory, 2 saved override.</Description>
+      </Item>
+      <Item ID="4">
+        <Name>Reboot Pending</Name>
+        <Operations>R</Operations>
+        <MultipleInstances>Single</MultipleInstances>
+        <Mandatory>Mandatory</Mandatory>
+        <Type>Boolean</Type>
+        <RangeEnumeration />
+        <Units />
+        <Description>Desired differs from active hardware.</Description>
+      </Item>
+      <Item ID="5">
+        <Name>Clear Override</Name>
+        <Operations>E</Operations>
+        <MultipleInstances>Single</MultipleInstances>
+        <Mandatory>Mandatory</Mandatory>
+        <Type />
+        <RangeEnumeration />
+        <Units />
+        <Description>Remove the saved override and return to factory/default; reboot if changed.</Description>
+      </Item>
+      <Item ID="6">
+        <Name>Last Error</Name>
+        <Operations>R</Operations>
+        <MultipleInstances>Single</MultipleInstances>
+        <Mandatory>Mandatory</Mandatory>
+        <Type>Integer</Type>
+        <RangeEnumeration />
+        <Units />
+        <Description>0 success; negative platform error otherwise.</Description>
+      </Item>
+    </Resources>
+    <Description2>31028 is an EdgeZ vendor object identifier, not an OMA-registered standard object.</Description2>
+  </Object>
+</LWM2M>

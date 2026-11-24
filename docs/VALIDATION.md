@@ -566,3 +566,25 @@ during radio-only WNM. The GPS server model is supplied as
 
 HEX/ELF files, per-variant hashes/configuration checks and build/test logs are
 saved locally in ignored `artifacts/ez-cam01-variants/`.
+
+
+## 2026-11-25 — EZ-DEV54 unified hardware image
+
+Built `pio run -e ez-dev54` with all base/camera/radar/GPS backends linked.
+Boot priority: saved Settings/ZMS override, valid factory extension, then base.
+Object 31029 exposes persistent selection and deferred reboot. Factory v2
+identity/PoP and saved Wi-Fi namespace stay compatible. UART22 uses deferred
+initialization, runtime pinctrl/baud and only the interrupt-driven API.
+RTT, console and logging are disabled in the generated configuration.
+
+- Full native suite: **27 tests passed**. New sanitizer-backed cases cover
+  precedence, persistence/reload, invalid records/types, failed writes, clear
+  override, deferred activation, LwM2M callbacks and UART mode boundaries.
+- Factory extension round trips match the firmware CRC parser; adding a
+  hardware flag preserves the existing identity bytes.
+- Linker allocation: FLASH 992040 bytes / 1392 KiB; RAM 258672 / 262144 bytes
+  (98.68%, including static stacks and configured heap). RAM margin is tight.
+- HEX SHA256: `4d5e255695d733071337f0d1ba323b8ea7df472b4aa7eddde1eb783ad20d42fc`. Local ignored artifacts: `artifacts/ez-dev54-unified/`.
+- Build and host validation only. This image was not flashed and factory
+  data was not changed. Physical peripheral behavior, runtime heap/stack
+  headroom and power consumption still require on-device verification.

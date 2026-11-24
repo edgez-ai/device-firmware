@@ -1,3 +1,5 @@
+#include "hardware_config.h"
+#include "halow_hardware.h"
 /* LwM2M over WPA3 HaLow, using either UDP or the MAC transport. */
 #ifdef RADAR_HALOW_LIGHT
 #include <errno.h>
@@ -22,20 +24,20 @@
 #include "liblwm2m.h"
 #include "halow_light.h"
 #include "halow_sta.h"
-#if defined(CONFIG_EZ_CAM_UART_GPS)
+#if defined(CONFIG_EZ_DEV54_UART_GPS)
 #include "halow_gps.h"
 #endif
-#if defined(CONFIG_EZ_CAM_CONNECTION_WATCHDOG)
+#if defined(CONFIG_EZ_DEV54_CONNECTION_WATCHDOG)
 #include "halow_connection.h"
 #endif
 #include "halow_sleep_diag.h"
-#if defined(CONFIG_EZ_CAM_WNM_SLEEP)
+#if defined(CONFIG_EZ_DEV54_WNM_SLEEP)
 #include "halow_sleep.h"
 #endif
 #ifdef RADAR_HALOW_CAMERA
 #include "halow_camera.h"
 #endif
-#if defined(CONFIG_EZ_CAM_SENSORS)
+#if defined(CONFIG_EZ_DEV54_SENSORS)
 #include "halow_sensors.h"
 #include "halow_device.h"
 #include "halow_time_sync.h"
@@ -422,7 +424,7 @@ bool lwm2m_session_is_equal(void *a, void *b, void *data) { return a == b; }
 uint8_t lwm2m_buffer_send(void *handle, uint8_t *data, size_t length, void *arg)
 {
 	struct link_session *link = handle;
-#if defined(CONFIG_EZ_CAM_WNM_SLEEP)
+#if defined(CONFIG_EZ_DEV54_WNM_SLEEP)
 	if (halow_sleep_active()) return COAP_503_SERVICE_UNAVAILABLE;
 #endif
 	if (link->fd < 0 || length > MAX_COAP) return COAP_500_INTERNAL_SERVER_ERROR;
@@ -441,7 +443,7 @@ uint8_t lwm2m_buffer_send(void *handle, uint8_t *data, size_t length, void *arg)
 			   (struct sockaddr *)&link->address, sizeof(link->address)) ==
 		FRAME_HEADER + length;
 #endif
-#if defined(CONFIG_EZ_CAM_SENSORS)
+#if defined(CONFIG_EZ_DEV54_SENSORS)
 	if (sent) halow_time_sync_sent(handle, data, length);
 #endif
 	return sent ? COAP_NO_ERROR : COAP_500_INTERNAL_SERVER_ERROR;
@@ -450,15 +452,15 @@ uint8_t lwm2m_buffer_send(void *handle, uint8_t *data, size_t length, void *arg)
 static void receive_packet(lwm2m_context_t *ctx, struct link_session *link,
                            uint8_t *packet, size_t length)
 {
-#if defined(CONFIG_EZ_CAM_WNM_SLEEP)
+#if defined(CONFIG_EZ_DEV54_WNM_SLEEP)
 	halow_sleep_request_begin(link, packet, length);
 #endif
-#if defined(CONFIG_EZ_CAM_SENSORS)
+#if defined(CONFIG_EZ_DEV54_SENSORS)
 	halow_time_sync_packet(ctx, packet, length, link);
 #else
 	lwm2m_handle_packet(ctx, packet, length, link);
 #endif
-#if defined(CONFIG_EZ_CAM_WNM_SLEEP)
+#if defined(CONFIG_EZ_DEV54_WNM_SLEEP)
 	halow_sleep_request_end();
 #endif
 }
@@ -565,39 +567,44 @@ static void run(void *unused1, void *unused2, void *unused3)
 {
 	struct link_session link = {.fd = -1};
 	lwm2m_context_t *ctx = NULL;
-	lwm2m_object_t *objects[] = {
+	lwm2m_object_t *common_objects[] = {
 		NULL,
 		get_server_object(1, "U", 300, false),
-#if defined(CONFIG_EZ_CAM_SENSORS)
+#if defined(CONFIG_EZ_DEV54_SENSORS)
 		&halow_device,
 #else
 		get_object_device(),
 #endif
 		&light, &button,
-#if defined(CONFIG_EZ_CAM_CONNECTION_WATCHDOG)
+#if defined(CONFIG_EZ_DEV54_CONNECTION_WATCHDOG)
 		&halow_connection,
 #endif
-#if defined(CONFIG_EZ_CAM_WNM_SLEEP)
+#if defined(CONFIG_EZ_DEV54_WNM_SLEEP)
 		&halow_sleep,
 #endif
-#ifdef RADAR_HALOW_CAMERA
-		&halow_camera,
-#endif
-#if defined(CONFIG_EZ_CAM_UART_GPS)
-		&halow_gps_location, &halow_gps_control,
-#endif
-#if defined(CONFIG_EZ_CAM_SENSORS)
+#if defined(CONFIG_EZ_DEV54_SENSORS)
 		&halow_accelerometer, &halow_gyrometer,
 #endif
-#if !defined(CONFIG_RADAR_SIMULATE_PRESENCE)
-		&radar_presence, &radar_distance,
-#endif
-	};
+        &halow_hardware,
+    };
+    lwm2m_object_t *objects[ARRAY_SIZE(common_objects) + 2];
+    memcpy(objects, common_objects, sizeof(common_objects));
+    unsigned object_count = ARRAY_SIZE(common_objects);
+    switch (hardware_mode_get()) {
+    case HARDWARE_CAMERA: objects[object_count++] = &halow_camera; break;
+    case HARDWARE_GPS:
+        objects[object_count++] = &halow_gps_location;
+        objects[object_count++] = &halow_gps_control; break;
+    case HARDWARE_RADAR:
+        objects[object_count++] = &radar_presence;
+        objects[object_count++] = &radar_distance; break;
+    default: break;
+    }
 	if (!objects[1] || !objects[2]) {
 		LOG_ERR("Could not allocate Light Control LwM2M objects");
 		return;
 	}
-#if !defined(CONFIG_EZ_CAM_SENSORS)
+#if !defined(CONFIG_EZ_DEV54_SENSORS)
 	objects[2]->executeFunc = NULL;
 #endif
 	lwm2m_stringToUri("/3311/0/5850", sizeof("/3311/0/5850") - 1, &light_uri);
@@ -609,14 +616,14 @@ static void run(void *unused1, void *unused2, void *unused3)
 #endif
 	atomic_val_t active = 0;
 	for (;;) {
-#if defined(CONFIG_EZ_CAM_WNM_SLEEP)
+#if defined(CONFIG_EZ_DEV54_WNM_SLEEP)
 		/* Stop sensor clocks before negotiation; preserve context/Observe state.
 		 * A suspended IP iface also blocks independent ARP/DHCP transmissions. */
 		if (halow_sleep_pending() || halow_sleep_active()) {
-#if defined(CONFIG_EZ_CAM_UART_GPS)
+#if defined(CONFIG_EZ_DEV54_UART_GPS)
 			(void)halow_gps_step(ctx, false);
 #endif
-#if defined(CONFIG_EZ_CAM_SENSORS)
+#if defined(CONFIG_EZ_DEV54_SENSORS)
 			(void)halow_sensors_step(NULL);
 			(void)halow_device_step(NULL);
 #endif
@@ -630,14 +637,14 @@ static void run(void *unused1, void *unused2, void *unused3)
 				lwm2m_resource_value_changed(ctx, &button_state_uri);
 				lwm2m_resource_value_changed(ctx, &button_counter_uri);
 			}
-#if defined(CONFIG_EZ_CAM_CONNECTION_WATCHDOG)
+#if defined(CONFIG_EZ_DEV54_CONNECTION_WATCHDOG)
 			halow_connection_wake();
 #else
 			if (ctx) (void)lwm2m_update_registration(ctx, 1, false);
 #endif
 		}
 		if (halow_sleep_active()) {
-#if defined(CONFIG_EZ_CAM_CONNECTION_WATCHDOG)
+#if defined(CONFIG_EZ_DEV54_CONNECTION_WATCHDOG)
 			halow_connection_pause();
 #endif
 			process_button(NULL); /* Keep local button/LED operation. No CoAP. */
@@ -649,7 +656,7 @@ static void run(void *unused1, void *unused2, void *unused3)
 		}
 #endif
 		bool reset_context = false;
-#if defined(CONFIG_EZ_CAM_CONNECTION_WATCHDOG)
+#if defined(CONFIG_EZ_DEV54_CONNECTION_WATCHDOG)
 		enum halow_connection_action recovery = halow_connection_step(ctx,
 			(atomic_get(&link_generation) & 1) != 0);
 		if (recovery == HALOW_CONN_UPDATE && ctx) {
@@ -663,12 +670,12 @@ static void run(void *unused1, void *unused2, void *unused3)
 #endif
 		atomic_val_t generation = atomic_get(&link_generation);
 		if (generation != active || reset_context) {
-#if defined(CONFIG_EZ_CAM_UART_GPS)
+#if defined(CONFIG_EZ_DEV54_UART_GPS)
 			(void)halow_gps_step(NULL, false);
 #endif
 			if (link.fd >= 0) zsock_close(link.fd);
 			link.fd = -1;
-#if defined(CONFIG_EZ_CAM_SENSORS)
+#if defined(CONFIG_EZ_DEV54_SENSORS)
 			(void)halow_sensors_step(NULL);
 			(void)halow_device_step(NULL);
 			halow_time_sync_reset();
@@ -680,10 +687,10 @@ static void run(void *unused1, void *unused2, void *unused3)
 				lwm2m_free(objects[0]);
 				objects[0] = NULL;
 			}
-#if defined(CONFIG_EZ_CAM_WNM_SLEEP)
+#if defined(CONFIG_EZ_DEV54_WNM_SLEEP)
 			halow_sleep_forget_requests();
 #endif
-#if defined(CONFIG_EZ_CAM_CONNECTION_WATCHDOG)
+#if defined(CONFIG_EZ_DEV54_CONNECTION_WATCHDOG)
 			halow_connection_context_closed();
 #endif
 			active = generation;
@@ -697,7 +704,7 @@ static void run(void *unused1, void *unused2, void *unused3)
 				objects[0] = get_security_object(1, link.uri, NULL, NULL, 0, false);
 				ctx = objects[0] != NULL ? lwm2m_init(&link) : NULL;
 				if (ctx != NULL && lwm2m_configure(ctx, endpoint, NULL, NULL,
-								   ARRAY_SIZE(objects), objects) == 0) {
+								   object_count, objects) == 0) {
 					LOG_INF("LwM2M endpoint %s via %s", endpoint, link.uri);
 				} else {
 					if (ctx != NULL) lwm2m_close(ctx);
@@ -727,17 +734,17 @@ static void run(void *unused1, void *unused2, void *unused3)
 #endif
 		process_button(ctx);
 
-#if defined(CONFIG_EZ_CAM_UART_GPS)
+#if defined(CONFIG_EZ_DEV54_UART_GPS)
 		bool gps_allow = ctx != NULL;
-#if defined(CONFIG_EZ_CAM_WNM_SLEEP)
+#if defined(CONFIG_EZ_DEV54_WNM_SLEEP)
 		gps_allow = gps_allow && !halow_sleep_pending();
 #endif
 		int gps_wait = halow_gps_step(ctx, gps_allow);
 #endif
 
-#if defined(CONFIG_EZ_CAM_SENSORS)
+#if defined(CONFIG_EZ_DEV54_SENSORS)
 		lwm2m_context_t *sampling_ctx = ctx;
-#if defined(CONFIG_EZ_CAM_WNM_SLEEP)
+#if defined(CONFIG_EZ_DEV54_WNM_SLEEP)
 		if (halow_sleep_pending()) sampling_ctx = NULL;
 #endif
 		int sensor_wait = halow_sensors_step(sampling_ctx);
@@ -749,19 +756,19 @@ static void run(void *unused1, void *unused2, void *unused3)
 		if (ctx != NULL && lwm2m_step(ctx, &timeout) == 0) {
 			wait_ms = CLAMP(timeout, 0, 300) * 1000;
 		}
-#if defined(CONFIG_EZ_CAM_SENSORS)
+#if defined(CONFIG_EZ_DEV54_SENSORS)
 		halow_sensors_internal_read(false);
 		if (sensor_wait >= 0 && (wait_ms < 0 || sensor_wait < wait_ms)) wait_ms = sensor_wait;
 		if (clock_wait >= 0 && (wait_ms < 0 || clock_wait < wait_ms)) wait_ms = clock_wait;
 #endif
-#if defined(CONFIG_EZ_CAM_WNM_SLEEP)
+#if defined(CONFIG_EZ_DEV54_WNM_SLEEP)
 		if (sleep_wait >= 0 && (wait_ms < 0 || sleep_wait < wait_ms)) wait_ms = sleep_wait;
 #endif
-#if defined(CONFIG_EZ_CAM_CONNECTION_WATCHDOG)
+#if defined(CONFIG_EZ_DEV54_CONNECTION_WATCHDOG)
 		int connection_wait = halow_connection_wait_ms();
 		if (connection_wait >= 0 && (wait_ms < 0 || connection_wait < wait_ms)) wait_ms = connection_wait;
 #endif
-#if defined(CONFIG_EZ_CAM_UART_GPS)
+#if defined(CONFIG_EZ_DEV54_UART_GPS)
 		if (gps_wait >= 0 && (wait_ms < 0 || gps_wait < wait_ms)) wait_ms = gps_wait;
 #endif
 		struct zsock_pollfd fds[] = {

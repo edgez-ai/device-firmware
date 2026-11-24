@@ -1,3 +1,4 @@
+#include "hardware_config.h"
 /* Radar supervisor. See radar_app.h. */
 #include <errno.h>
 #include <string.h>
@@ -8,7 +9,6 @@
 #include <zephyr/drivers/gpio.h>
 #endif
 #if defined(CONFIG_RADAR_SIMULATE_PRESENCE)
-#include <hal/nrf_uarte.h>
 #endif
 
 #include "radar_app.h"
@@ -17,7 +17,7 @@
 #ifdef RADAR_HALOW_CAMERA
 #include "halow_camera.h"
 #endif
-#if defined(CONFIG_EZ_CAM_UART_GPS)
+#if defined(CONFIG_EZ_DEV54_UART_GPS)
 #include "halow_gps.h"
 #endif
 #include "radar_link.h"
@@ -92,7 +92,7 @@ static void simulation_debounced(struct k_work *work)
 	ARG_UNUSED(work);
 	if (sample >= 0 && sample != sim_stable_button) {
 		sim_stable_button = sample;
-#if defined(CONFIG_EZ_CAM_BLE_PROV)
+#if defined(CONFIG_EZ_DEV54_BLE_PROV)
 		ez_prov_button_changed(sample != 0);
 #endif
 #ifdef RADAR_HALOW_LIGHT
@@ -122,21 +122,6 @@ static int button_init(void)
 	if (!gpio_is_ready_dt(&sim_button) || !gpio_is_ready_dt(&sim_led)) {
 		return -ENODEV;
 	}
-#if defined(CONFIG_EZ_CAM_UART_BASE)
-	/* Explicitly release old UART state too, including after debug resets.
-	 * The simulator has no serial driver/device and does not drive TX/RX. */
-	nrf_uarte_disable((NRF_UARTE_Type *)DT_REG_ADDR(DT_NODELABEL(uart22)));
-	rc = gpio_pin_configure(sim_button.port, 11, GPIO_DISCONNECTED);
-	if (rc == 0) {
-		rc = gpio_pin_configure(sim_button.port, 12, GPIO_DISCONNECTED);
-	}
-	if (rc != 0) {
-		return rc;
-	}
-	LOG_INF("SIMULATION: UART22 disabled; P1.11/P1.12 disconnected");
-	LOG_INF("SIMULATION: radar power enable P1.09 %s via overlay GPIO hog",
-		DT_NODE_HAS_PROP(DT_NODELABEL(radar_power_off), output_high) ? "HIGH" : "LOW");
-#endif
 	rc = gpio_pin_configure_dt(&sim_button, GPIO_INPUT);
 	if (rc != 0) {
 		return rc;
@@ -150,7 +135,7 @@ static int button_init(void)
 		return sim_initial_button;
 	}
 	sim_stable_button = sim_initial_button;
-#if defined(CONFIG_EZ_CAM_BLE_PROV)
+#if defined(CONFIG_EZ_DEV54_BLE_PROV)
 	ez_prov_button_changed(sim_stable_button != 0);
 #endif
 	k_work_init_delayable(&sim_debounce, simulation_debounced);
@@ -401,19 +386,19 @@ int radar_app_start(void)
 	}
 #endif
 #ifdef RADAR_HALOW_CAMERA
-	rc = halow_camera_start();
+	rc = hardware_mode_get() == HARDWARE_CAMERA ? halow_camera_start() : 0;
 	if (rc != 0) {
 		LOG_ERR("Camera initialization failed: %d", rc);
 	}
 #endif
 #ifdef RADAR_HALOW_LIGHT
 
-#if defined(CONFIG_EZ_CAM_UART_GPS)
-	rc = halow_gps_init();
+#if defined(CONFIG_EZ_DEV54_UART_GPS)
+	rc = hardware_mode_get() == HARDWARE_GPS ? halow_gps_init() : 0;
 	if (rc != 0) LOG_ERR("GPS initialization failed: %d", rc);
 #endif
 	rc = halow_light_start(sim_stable_button != 0);
-	if (rc != 0 || IS_ENABLED(CONFIG_RADAR_SIMULATE_PRESENCE)) {
+	if (rc != 0 || hardware_mode_get() != HARDWARE_RADAR) {
 		return rc;
 	}
 #endif

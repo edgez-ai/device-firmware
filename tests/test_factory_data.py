@@ -38,6 +38,26 @@ class Tests(unittest.TestCase):
         result = Factory()
         rc = self.lib.ez_factory_parse(ctypes.create_string_buffer(raw), len(raw), ctypes.byref(result))
         return rc, result
+    def test_hardware_extension(self):
+        record = self.sample(); original = f.encode(record)
+        for mode, name in enumerate(f.HARDWARE):
+            record['hardware'] = name
+            page = f.encode(record, original)
+            self.assertEqual(page[:211], original[:211])
+            self.assertEqual(f.decode(page)['hardware'], name)
+            value = ctypes.c_uint8(99)
+            self.assertEqual(self.lib.ez_factory_hardware_parse(ctypes.create_string_buffer(page), len(page), ctypes.byref(value)), 0)
+            self.assertEqual(value.value, mode)
+            corrupt = bytearray(page); corrupt[264] ^= 1
+            self.assertNotIn('hardware', f.decode(corrupt))
+            self.assertLess(self.lib.ez_factory_hardware_parse(ctypes.create_string_buffer(bytes(corrupt)), len(page), ctypes.byref(value)), 0)
+        self.assertNotIn('hardware', f.decode(original))
+        record['hardware'] = None
+        self.assertNotIn('hardware', f.decode(f.encode(record, page)))
+        occupied = bytearray(original); occupied[256:272] = b'unknown-layout!!'
+        record['hardware'] = 'gps'
+        with self.assertRaises(ValueError): f.encode(record, occupied)
+
     def test_v2_interoperability_and_wifi(self):
         record = self.sample(); raw = f.encode(record)
         self.assertEqual(f.RECORD_SIZE, 211)
@@ -70,6 +90,10 @@ class Tests(unittest.TestCase):
             with self.assertRaises(ValueError): f.encode(record)
     def test_pop_and_private_output_permissions(self):
         record = self.sample(); qr = f.ble_qr(record)
+        # Public fixture vectors pin the existing on-device credential format
+        # across the EZ-DEV54 product rename (these are not device secrets).
+        self.assertEqual(qr['pop'], 'dd2e90ccc90881d81e5c1de1b5f9ee36')
+        self.assertEqual(qr['name'], 'PROV_CAMae216c')
         self.assertEqual(qr['pop'], hmac.new(record['private_key'], f.LABEL, hashlib.sha256).hexdigest()[:32])
         self.assertNotIn('password', f.summary(record)); self.assertNotIn('private_key', f.summary(record))
         path = Path(self.temp.name)/'secret.bin'; f.secret_write(path, f.encode(record))

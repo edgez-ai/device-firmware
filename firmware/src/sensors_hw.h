@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
-#ifndef EZ_CAM_SENSORS_HW_H
-#define EZ_CAM_SENSORS_HW_H
+#ifndef EZ_DEV54_SENSORS_HW_H
+#define EZ_DEV54_SENSORS_HW_H
 #define EZ_IMU_ACCEL 1U
 #define EZ_IMU_GYRO 2U
 int board_sensors_init(void);

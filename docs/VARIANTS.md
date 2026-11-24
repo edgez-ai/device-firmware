@@ -1,61 +1,68 @@
-# UART device variants
+# Runtime external hardware selection
 
-The four build profiles target the same nRF54L15 + FGH200M carrier. Select
-exactly one UART peripheral at build time. All four include ESP-compatible BLE
-provisioning, factory identity/country, saved credentials, UDP LwM2M over HaLow,
-Device/IMU resources, LED/button, the connection watchdog and timed radio WNM.
-RTT, console and logging remain disabled. WNM signal-pin parking remains an
-independent, default-off experiment.
+One `ez-dev54` firmware includes all four hardware modes. BLE onboarding,
+HaLow, Device/IMU, LED/button, watchdog and WNM services are common. RTT,
+console and logging stay disabled. No peripheral is automatically probed.
 
-| Variant | PlatformIO environment | UART22 | Peripheral power P1.09 |
+Build with `cd firmware && pio run -e ez-dev54`. Add `-t upload` to flash.
+The former per-variant build environments have been replaced by this image.
+
+Boot selection priority is **saved override > valid factory flag > base**.
+An absent or invalid flag defaults safely to base. The saved override uses
+Zephyr Settings/ZMS in nonvolatile flash (the nRF equivalent of NVS).
+Existing devices with no hardware flag or override boot as base.
+
+| Value | Hardware | UART22 MCU TX / RX | Power P1.09 |
 | --- | --- | --- | --- |
-| Base | `ez-cam01-base` | Disabled; TX/RX disconnected | LOW |
-| Camera | `ez-cam01-camera` | VC0706, 921600 baud; initialized on Capture | Off between captures |
-| Radar | `ez-cam01-radar` | IWRL6432, TI baud correction enabled | On during normal operation |
-| GPS | `ez-cam01-gps` | L76K, 9600 baud; initialized on Acquire | Off after fix, timeout or cancellation |
+| 0 | Base | Both disconnected; UART never initialized | Off |
+| 1 | VC0706 camera | P1.12 / P1.11, 921600 baud | On only during capture |
+| 2 | IWRL6432 radar | P1.11 / P1.12, 115200 with TI baud correction | On during operation |
+| 3 | L76K GPS | P1.11 / P1.12, 9600 baud | On request, then off |
 
-Build from `firmware/`, for example:
+The connector is shared; only one external device is supported at a time.
+The radar expects separately flashed autostart firmware emitting supported
+human-detection TLV reports. The host does not flash or configure the radar MCU.
+Radar presence `/3302/0/5500` and distance `/3330/0/5700`, camera resources,
+and GPS objects are registered only for the selected mode. Object 31029 is
+always available. UART pin routing and baud are chosen before deferred init.
 
-```sh
-pio run -e ez-cam01-base
-pio run -e ez-cam01-camera
-pio run -e ez-cam01-radar
-pio run -e ez-cam01-gps
-```
+## LwM2M configuration
 
-Add `-t upload` to build and flash the selected profile with the existing
-J-Link uploader. Building alone does not access hardware. Use one profile at a
-time on the shared connector. Firmware updates preserve the factory and Settings
-partitions. They do not automatically reopen BLE if valid credentials are saved;
-hold the button for five seconds to clear BLE-saved credentials and reprovision.
-The device-specific PoP does not change between variants.
+| Path | Access | Meaning |
+| --- | --- | --- |
+| `/31029/0/0` | RW | Desired hardware: 0 base, 1 camera, 2 radar, 3 GPS |
+| `/31029/0/1` | R | Hardware active this boot |
+| `/31029/0/2` | R | Factory hardware, or -1 if absent/invalid |
+| `/31029/0/3` | R | Desired selection source: 0 default, 1 factory, 2 saved override |
+| `/31029/0/4` | R | Reboot pending because desired differs from active |
+| `/31029/0/5` | E | Delete saved override and restore factory/default selection |
+| `/31029/0/6` | R | Last configuration error; 0 means success |
 
-Legacy `ez-cam01`, `ez-cam01-ble-prov`, `ez-cam01-idle-diag` and
-`ez-cam01-wnm-pins` remain camera profiles. The default environment remains
-`ez-cam01`. The new four variants all include BLE provisioning, including the
-new `ez-cam01-camera` equivalent of the BLE camera profile.
+Writing resource 0 saves the selection before returning success. A change
+of active type schedules a cold reboot after two seconds so the response can
+leave first. Writing the active type saves an override without rebooting.
+Execute resource 5 also reboots when the resulting selection differs.
+Factory identity, country and saved Wi-Fi credentials are preserved.
+Object 31029 is an EdgeZ vendor identifier. Import
+[`lwm2m/31029.xml`](lwm2m/31029.xml) into a generic server UI as needed.
 
-## Wiring and radar behavior
+## Factory flag
 
-The carrier's external peripheral enable is active HIGH on P1.09. The camera
-uses MCU TX P1.12 / RX P1.11. Radar and GPS use MCU TX P1.11 / RX P1.12;
-connect peripheral TX to MCU RX and peripheral RX to MCU TX. GPS uses the
-existing tracker carrier pinout. Confirm module EN/WAKE/reset strapping on the
-attached L76K board; no additional GNSS wake/reset pins are assumed by this
-four-wire UART/supply profile. Pin selections are in the variant devicetree
-overlays under `firmware/zephyr/boards/`.
+Use `firmware/scripts/factory_data.py create --hardware camera ...` or
+`update --input existing.bin --hardware gps --output updated.bin`.
+`--clear-hardware` removes the flag. Updates retain the 211-byte v2 identity
+layout, private keys, PoP derivation and unrelated factory page contents.
+The extension occupies bytes 256–271, uses magic `EZHW`, version 1, length
+16, a one-byte hardware value, three reserved zero bytes and CRC32 of the
+first 12 bytes. Unknown occupied extension bytes are refused on update.
+Factory images and backups contain private keys and must remain outside Git.
+Programming the factory page uses the existing explicit factory flash command
+with backup/verification; ordinary firmware upload preserves this page.
 
-The radar variant retains the existing receive-only IWRL6432 supervisor and
-TLV 1101 decoder. It expects radar firmware that autostarts and emits the
-supported human-detection reports. This profile does not flash the radar MCU
-or send a CLI configuration. Native presence `/3302/0/5500` and distance
-`/3330/0/5700` are registered only in the radar variant. Button presses control
-the local LED; the base and GPS variants publish no simulated radar results.
-
-Timed WNM is a **radio** sleep. The radar continues operating during WNM, and
-the latest radar state is published when radio processing resumes. Therefore
-the camera/GPS/base sleep power floors are not promises for the powered radar
-variant. No physical power or radar-hardware validation is implied by a build.
+Timed WNM sleeps the radio. A selected radar continues operating during WNM;
+its power consumption remains part of the device power budget. Base, camera
+and GPS leave their external power rail off while idle. Physical peripheral
+operation and power measurements require testing on the corresponding hardware.
 
 ## On-demand L76K GPS
 

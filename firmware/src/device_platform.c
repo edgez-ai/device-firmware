@@ -10,7 +10,7 @@
 #include <zephyr/sys/reboot.h>
 #include <zephyr/sys/sys_heap.h>
 #include <zephyr/version.h>
-#if defined(CONFIG_EZ_CAM_FACTORY_DATA)
+#if defined(CONFIG_EZ_DEV54_FACTORY_DATA)
 #include "factory_data.h"
 #endif
 
@@ -19,7 +19,7 @@ static atomic_t reboot_pending;
 static int reboot_error;
 const char *board_device_serial(void)
 {
-#if defined(CONFIG_EZ_CAM_FACTORY_DATA)
+#if defined(CONFIG_EZ_DEV54_FACTORY_DATA)
 	const struct ez_factory_data *factory = ez_factory_get();
 	if (factory) return factory->serial;
 #endif
@@ -58,7 +58,7 @@ static void reboot_work_handler(struct k_work *work)
 {
 	(void)work;
 	if (atomic_get(&reboot_pending) == 2) {
-#if defined(CONFIG_EZ_CAM_BLE_PROV)
+#if defined(CONFIG_EZ_DEV54_BLE_PROV)
 		reboot_error = ez_prov_forget_network();
 		if (reboot_error) { atomic_clear(&reboot_pending); return; }
 #endif

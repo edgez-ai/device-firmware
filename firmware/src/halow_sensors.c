@@ -73,7 +73,7 @@ int halow_sensors_step(lwm2m_context_t *ctx)
 				else axis_valid[bit == EZ_IMU_ACCEL ? 0 : 1] = false;
 			}
 		}
-		next_sample = k_uptime_get() + CONFIG_EZ_CAM_IMU_OBSERVE_INTERVAL_MS;
+		next_sample = k_uptime_get() + CONFIG_EZ_DEV54_IMU_OBSERVE_INTERVAL_MS;
 	}
 	int64_t remaining = next_sample - k_uptime_get();
 	return remaining > 0 ? (int)remaining : 0;

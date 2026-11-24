@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Program and verify EZ-CAM01 over J-Link/SWD, then reset and run."""
+"""Program and verify EZ-DEV54 over J-Link/SWD, then reset and run."""
 import argparse
 import os
 from pathlib import Path
@@ -27,7 +27,7 @@ def main():
         executable = "/usr/local/bin/JLinkExe"
     if executable is None:
         parser.error("Install SEGGER J-Link or set JLINK_EXE")
-    with tempfile.TemporaryDirectory(prefix="ez-cam01-jlink-") as folder:
+    with tempfile.TemporaryDirectory(prefix="ez-dev54-jlink-") as folder:
         script = Path(folder) / "flash.jlink"
         script.write_text(f'r\nloadfile "{image}"\nr\ng\nexit\n')
         command = [str(executable), "-device", "NRF54L15_M33", "-if", "SWD",

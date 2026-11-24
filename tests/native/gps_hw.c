@@ -66,3 +66,5 @@ int main(int argc,char **argv) {
  }
  puts("Actual GPS UART deferral, ISR handoff, supply sequencing and error cleanup passed");
 }
+
+int hardware_uart_init(void) { return device_init(&gps_uart_device); }

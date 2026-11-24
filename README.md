@@ -1,7 +1,7 @@
-# EZ-CAM01
+# EZ-DEV54
 
-nRF54L15 + FGH200M/MM8108 Wi-Fi HaLow camera firmware for the VC0706 UART
-camera. This repository is the home for further camera and power work.
+nRF54L15 + FGH200M/MM8108 Wi-Fi HaLow development firmware with base,
+VC0706 camera, IWRL6432 radar and L76K GPS runtime modes.
 
 The initial implementation comes from the validated `openwrt-firmware`
 camera baseline `cb9130a`, with the EdgeZ Morse driver fork retained.
@@ -12,10 +12,13 @@ the rejected extra UART resume/suspend cycle is not included.
 
 ## Build
 
-Four UART device variants are available: **base** (no UART device), **camera**
-(VC0706), **radar** (IWRL6432), and **GPS** (L76K, acquire on request then
-power off). See [variant builds, wiring and resources](docs/VARIANTS.md).
-The existing default and legacy environments remain camera profiles.
+One firmware supports **base**, **VC0706 camera**, **IWRL6432 radar** and
+**L76K GPS**. Hardware is selected at boot: saved LwM2M override, then factory
+flag, then base. Configure `/31029/0/0` with 0–3; changes persist in flash and
+activate after reboot. See [hardware selection, wiring and resources](docs/VARIANTS.md).
+
+This project was formerly EZ-CAM01. The build environment is `ez-dev54` and
+feature flags use `EZ_DEV54_`. Factory PoPs and saved Wi-Fi remain compatible.
 
 Install PlatformIO and initialize the pinned Git submodules:
 
@@ -27,7 +30,7 @@ cp zephyr/halowlink2-secrets.conf.example zephyr/halowlink2-secrets.conf
 pio run
 ```
 
-The default environment is `ez-cam01`, targeting the existing EdgeZ carrier
+The default environment is `ez-dev54`, targeting the existing EdgeZ carrier
 through the XIAO nRF54L15 CPU definition. Gateway SSID defaults to
 `halowlink2`; EU region and DHCP-based server discovery are retained.
 No fixed Jetson IP is used. The LwM2M server must listen on UDP 5683 on the
@@ -51,7 +54,7 @@ deliberately; `git submodule update --remote` is not part of a normal build.
 
 ## BLE provisioning
 
-An optional `ez-cam01-ble-prov` environment adds compatibility with the
+The unified environment includes compatibility with the
 Espressif ESP BLE Prov app, persistent onboarding and a five-second button
 reset. Country comes from factory storage; a complete factory Wi-Fi profile
 has priority over BLE-saved credentials. See the [factory and BLE guide](docs/BLE-PROVISIONING.md)
@@ -123,7 +126,7 @@ photo. No SPI input-gating/high-output experiment is imported.
 `31026`. It runs only after Execute; normal standby continues to use DTIM10.
 The [connection watchdog](docs/CONNECTION-WATCHDOG.md) checks native LwM2M ACKs
 during normal operation and after wake, with staged reconnect recovery.
-The experimental `ez-cam01-wnm-pins` environment adds WNM-only signal-pin
+The optional `CONFIG_EZ_DEV54_WNM_PARK_PINS=y` setting adds WNM-only signal-pin
 parking for a power comparison; see the [pin-state table](docs/SLEEP.md#experimental-wnm-only-gpio-parking).
 
 The original carrier measured about 3 mW at the flat sleep floor after a
@@ -132,7 +135,7 @@ validation, not a new current measurement for this repository and not the
 average including DTIM wakes, captures or transfers. Disconnect SWD and
 cold-start before comparing measurements; do not take a photo first.
 
-For optional cached sleep diagnostics, build `pio run -e ez-cam01-idle-diag`.
+For optional cached sleep diagnostics, pass `-DRADAR_HALOW_SLEEP_DIAG=ON` to CMake.
 This exposes the inherited diagnostic commands through `/3347/0/5750`.
 Use the default image for the validated baseline comparison.
 

@@ -12,7 +12,7 @@ class Lifecycle(unittest.TestCase):
         cls.binary = Path(cls.temp.name)/'sensors'
         subprocess.run(['cc', '-std=c11', '-D_POSIX_C_SOURCE=200809L', '-Wall', '-Wextra', '-Werror',
                         '-fsanitize=address,undefined', '-DLWM2M_CLIENT_MODE',
-                        '-DCONFIG_EZ_CAM_IMU_OBSERVE_INTERVAL_MS=1000',
+                        '-DCONFIG_EZ_DEV54_IMU_OBSERVE_INTERVAL_MS=1000',
                         '-I'+str(ROOT/'tests/native'), '-I'+str(ROOT/'firmware/src'),
                         '-I'+str(ROOT/'third_party/wakaama/include'),
                         str(ROOT/'tests/native/sensors_lifecycle.c'),

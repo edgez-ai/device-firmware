@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
-#ifndef EZ_CAM_DEVICE_PLATFORM_H
-#define EZ_CAM_DEVICE_PLATFORM_H
+#ifndef EZ_DEV54_DEVICE_PLATFORM_H
+#define EZ_DEV54_DEVICE_PLATFORM_H
 #include <stdbool.h>
 #include <stdint.h>
 const char *board_device_serial(void);

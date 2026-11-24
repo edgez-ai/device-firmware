@@ -21,7 +21,7 @@ static const struct gpio_dt_spec battery_en =
 static const struct gpio_dt_spec battery_pin =
 	GPIO_DT_SPEC_GET(DT_PATH(zephyr_user), battery_input_gpios);
 static const struct gpio_dt_spec imu_irq = GPIO_DT_SPEC_GET(DT_ALIAS(imu0), irq_gpios);
-PINCTRL_DT_DEFINE(DT_NODELABEL(i2c30));
+PINCTRL_DT_DEV_CONFIG_DECLARE(DT_NODELABEL(i2c30));
 static const struct pinctrl_dev_config *const imu_pins =
 	PINCTRL_DT_DEV_CONFIG_GET(DT_NODELABEL(i2c30));
 static unsigned int observed_mask, hardware_mask;
@@ -176,7 +176,7 @@ int board_voltage_read(double *volts)
 		if (!rc) {
 			/* R26=R29=100k. Optional factory/board calibration is separate
 			 * from the physical divider ratio and defaults to unity. */
-			int64_t corrected_mv = ((int64_t)mv * 2 * CONFIG_EZ_CAM_VOLTAGE_SCALE_PPM + 500000) / 1000000;
+			int64_t corrected_mv = ((int64_t)mv * 2 * CONFIG_EZ_DEV54_VOLTAGE_SCALE_PPM + 500000) / 1000000;
 			*volts = corrected_mv / 1000.0;
 		}
 	}

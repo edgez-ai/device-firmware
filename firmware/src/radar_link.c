@@ -17,6 +17,7 @@
 #include <hal/nrf_uarte.h>
 
 #include "radar_link.h"
+#include "hardware_uart.h"
 
 LOG_MODULE_REGISTER(radar_link, CONFIG_RADAR_LOG_LEVEL);
 
@@ -45,76 +46,34 @@ static K_SEM_DEFINE(wake_sem, 0, 1);
 static bool wake_irq;
 #endif
 
-RING_BUF_DECLARE(rx_ring, CONFIG_RADAR_UART_RX_BUFFER_SIZE);
+RING_BUF_DECLARE(radar_rx_ring, CONFIG_RADAR_UART_RX_BUFFER_SIZE);
 static K_SEM_DEFINE(rx_sem, 0, 1);
-static K_SEM_DEFINE(rx_off_sem, 0, 1);
 static struct k_spinlock rx_lock;
-static uint8_t rx_dma[2][256];
-static uint8_t next_buffer;
 static uint8_t capture[64];
 static size_t capture_len;
 static uint32_t received_bytes, transmitted_bytes, dropped_bytes;
 static uint32_t error_flags, stopped_count, restart_count;
 static int restart_error;
-static atomic_t rx_enabled;
 static bool uart_on;
 
-static void uart_callback(const struct device *dev, struct uart_event *event,
-			  void *user_data)
+static void uart_callback(const struct device *dev, void *user_data)
 {
-	ARG_UNUSED(user_data);
-	int rc;
-	k_spinlock_key_t key;
-
-	switch (event->type) {
-	case UART_RX_RDY: {
-		const uint8_t *data = event->data.rx.buf + event->data.rx.offset;
-		size_t len = event->data.rx.len;
-		key = k_spin_lock(&rx_lock);
-		size_t written = ring_buf_put(&rx_ring, data, len);
-		size_t save = MIN(len, sizeof(capture) - capture_len);
-		received_bytes += len;
-		dropped_bytes += len - written;
-		memcpy(capture + capture_len, data, save);
-		capture_len += save;
-		k_spin_unlock(&rx_lock, key);
-		k_sem_give(&rx_sem);
-		break;
-	}
-	case UART_RX_BUF_REQUEST:
-		rc = uart_rx_buf_rsp(dev, rx_dma[next_buffer], sizeof(rx_dma[0]));
-		if (rc == 0) {
-			next_buffer ^= 1U;
-		} else {
-			key = k_spin_lock(&rx_lock);
-			restart_error = rc;
-			k_spin_unlock(&rx_lock, key);
-		}
-		break;
-	case UART_RX_STOPPED:
-		key = k_spin_lock(&rx_lock);
-		error_flags |= event->data.rx_stop.reason;
-		stopped_count++;
-		k_spin_unlock(&rx_lock, key);
-		break;
-	case UART_RX_DISABLED:
-		if (atomic_get(&rx_enabled)) {
-			next_buffer = 1U;
-			rc = uart_rx_enable(dev, rx_dma[0], sizeof(rx_dma[0]), 10000);
-			key = k_spin_lock(&rx_lock);
-			if (rc == 0) {
-				restart_count++;
-			} else {
-				restart_error = rc;
-			}
-			k_spin_unlock(&rx_lock, key);
-		} else {
-			k_sem_give(&rx_off_sem);
-		}
-		break;
-	default:
-		break;
-	}
+ ARG_UNUSED(user_data);
+ uint8_t data[64];
+ while (uart_irq_update(dev) && uart_irq_is_pending(dev)) {
+  int errors = uart_err_check(dev);
+  if (errors > 0) error_flags |= (uint32_t)errors;
+  if (!uart_irq_rx_ready(dev)) break;
+  int len = uart_fifo_read(dev, data, sizeof(data));
+  if (len <= 0) break;
+  k_spinlock_key_t key = k_spin_lock(&rx_lock);
+  size_t written = ring_buf_put(&radar_rx_ring, data, len);
+  size_t save = MIN((size_t)len, sizeof(capture) - capture_len);
+  received_bytes += len; dropped_bytes += len - written;
+  memcpy(capture + capture_len, data, save); capture_len += save;
+  k_spin_unlock(&rx_lock, key);
+  k_sem_give(&rx_sem);
+ }
 }
 
 static int port_write(void *ctx, const uint8_t *data, size_t len)
@@ -142,7 +101,7 @@ static int port_read(void *ctx, uint8_t *data, size_t len, uint32_t timeout_ms)
 
 	for (;;) {
 		k_spinlock_key_t key = k_spin_lock(&rx_lock);
-		uint32_t got = ring_buf_get(&rx_ring, data, (uint32_t)len);
+		uint32_t got = ring_buf_get(&radar_rx_ring, data, (uint32_t)len);
 		k_spin_unlock(&rx_lock, key);
 
 		if (got > 0U) {
@@ -151,7 +110,7 @@ static int port_read(void *ctx, uint8_t *data, size_t len, uint32_t timeout_ms)
 		if (k_sem_take(&rx_sem, K_MSEC(timeout_ms)) != 0) {
 			/* One last look: bytes may have arrived with the timeout. */
 			key = k_spin_lock(&rx_lock);
-			got = ring_buf_get(&rx_ring, data, (uint32_t)len);
+			got = ring_buf_get(&radar_rx_ring, data, (uint32_t)len);
 			k_spin_unlock(&rx_lock, key);
 			return (int)got;
 		}
@@ -162,9 +121,9 @@ static void port_flush(void *ctx)
 {
 	ARG_UNUSED(ctx);
 
-	/* Discard queued bytes without interrupting continuous DMA reception. */
+	/* Discard queued bytes without interrupting interrupt-driven reception. */
 	k_spinlock_key_t key = k_spin_lock(&rx_lock);
-	ring_buf_reset(&rx_ring);
+	ring_buf_reset(&radar_rx_ring);
 	k_sem_reset(&rx_sem);
 	k_spin_unlock(&rx_lock, key);
 }
@@ -228,7 +187,7 @@ static void apply_baud(void)
 	}
 }
 
-/* Resume the UART and start asynchronous reception. */
+/* Resume the UART and start interrupt-driven reception. */
 static int rx_start(void)
 {
 	int rc;
@@ -242,15 +201,8 @@ static int rx_start(void)
 		return rc;
 	}
 	apply_baud();
-	next_buffer = 1U;
-	atomic_set(&rx_enabled, 1);
-	rc = uart_rx_enable(radar_uart, rx_dma[0], sizeof(rx_dma[0]), 10000);
-	if (rc != 0) {
-		atomic_clear(&rx_enabled);
-		LOG_ERR("UART async RX enable failed: %d", rc);
-		(void)pm_device_action_run(radar_uart, PM_DEVICE_ACTION_SUSPEND);
-		return rc;
-	}
+	uart_irq_rx_enable(radar_uart);
+	uart_irq_err_enable(radar_uart);
 	uart_on = true;
 	return 0;
 }
@@ -265,11 +217,8 @@ static int rx_stop(void)
 		return 0;
 	}
 	uart_on = false;
-	atomic_clear(&rx_enabled);
-	k_sem_reset(&rx_off_sem);
-	if (uart_rx_disable(radar_uart) == 0) {
-		(void)k_sem_take(&rx_off_sem, K_MSEC(100));
-	}
+	uart_irq_rx_disable(radar_uart);
+	uart_irq_err_disable(radar_uart);
 	rc = pm_device_action_run(radar_uart, PM_DEVICE_ACTION_SUSPEND);
 	if ((rc != 0) && (rc != -EALREADY)) {
 		LOG_ERR("UART suspend failed: %d", rc);
@@ -394,7 +343,7 @@ int radar_link_power_cycle(void)
 	port_flush(NULL);
 	rc = rx_start();
 	if (rc == 0) {
-		LOG_INF("UART async RX ready: %u baud, TX=P1.11 RX=P1.12, 2x256-byte DMA buffers",
+		LOG_INF("UART IRQ RX ready: %u baud, TX=P1.11 RX=P1.12, interrupt-driven RX",
 			IS_ENABLED(CONFIG_RADAR_TI_BAUD_TEST) ? 113475U : 115200U);
 	}
 	return rc;
@@ -405,7 +354,7 @@ int radar_link_init(void)
 {
 	int rc;
 
-	if (!device_is_ready(radar_uart) || !gpio_is_ready_dt(&power)) {
+	if (!gpio_is_ready_dt(&power)) {
 		LOG_ERR("radar UART or GPIO not ready");
 		return -ENODEV;
 	}
@@ -414,9 +363,11 @@ int radar_link_init(void)
 	if (rc != 0) {
 		return rc;
 	}
-	rc = uart_callback_set(radar_uart, uart_callback, NULL);
+	rc = hardware_uart_init();
+	if (rc) return rc;
+	rc = uart_irq_callback_user_data_set(radar_uart, uart_callback, NULL);
 	if (rc != 0) {
-		LOG_ERR("UART async setup failed: %d", rc);
+		LOG_ERR("UART IRQ setup failed: %d", rc);
 		return rc;
 	}
 	rc = pm_device_action_run(radar_uart, PM_DEVICE_ACTION_SUSPEND);

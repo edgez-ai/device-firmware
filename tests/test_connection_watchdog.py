@@ -11,7 +11,7 @@ class ConnectionWatchdog(unittest.TestCase):
             binary=Path(tmp)/'watchdog'
             subprocess.run(['cc','-std=c11','-Wall','-Wextra','-Werror',
                 '-fsanitize=address,undefined','-DLWM2M_CLIENT_MODE',
-                '-DCONFIG_EZ_CAM_CONNECTION_PROBE_SECONDS=60','-DCONFIG_EZ_CAM_CONNECTION_RESPONSE_SECONDS=45',
+                '-DCONFIG_EZ_DEV54_CONNECTION_PROBE_SECONDS=60','-DCONFIG_EZ_DEV54_CONNECTION_RESPONSE_SECONDS=45',
                 '-I'+str(ROOT/'tests/native'),'-I'+str(ROOT/'firmware/src'),
                 '-I'+str(ROOT/'third_party/wakaama/include'),str(ROOT/'firmware/src/halow_connection.c'),
                 str(ROOT/'tests/native/connection_watchdog.c'),'-o',str(binary)],check=True)

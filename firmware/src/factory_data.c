@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #include <zephyr/autoconf.h>
-#if defined(CONFIG_EZ_CAM_FACTORY_DATA)
+#if defined(CONFIG_EZ_DEV54_FACTORY_DATA)
 #include "factory_data.h"
 #include <errno.h>
 #include <psa/crypto.h>
@@ -39,6 +39,7 @@ const char *morsemicro_get_country_code(void)
 
 int ez_factory_crypto_init(void)
 {
+	/* Versioned KDF domain: keep existing device PoPs and QR labels valid. */
 	const char label[] = "EZ-CAM01 BLE provisioning PoP v1";
 	uint8_t digest[32]; size_t size;
 	psa_key_id_t key = 0;
@@ -71,4 +72,11 @@ int ez_factory_crypto_init(void)
 }
 const char *ez_factory_pop(void) { return pop; }
 const char *ez_factory_ble_name(void) { return ble_name; }
+int ez_factory_hardware(void)
+{
+	if (ez_factory_init()) return -1;
+	uintptr_t address = DT_REG_ADDR(DT_NODELABEL(cpuapp_rram)) + EZ_FACTORY_ADDRESS;
+	uint8_t mode;
+	return ez_factory_hardware_parse((const uint8_t *)address, EZ_FACTORY_PAGE_SIZE, &mode) == 0 ? mode : -1;
+}
 #endif

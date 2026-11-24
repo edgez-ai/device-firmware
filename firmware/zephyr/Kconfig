@@ -1,51 +1,41 @@
 # nRF54L15 + FGH200M host firmware for the IWRL6432 radar.
 
-menu "EZ-CAM01 UART device and HaLow services"
+menu "EZ-DEV54 UART device and HaLow services"
 
-choice EZ_CAM_UART_DEVICE
-	prompt "Carrier UART device"
-	default EZ_CAM_UART_CAMERA
+config EZ_DEV54_UNIFIED
+	bool "Runtime external hardware selection"
+	default y
 
-config EZ_CAM_UART_BASE
-	bool "Base (no UART device)"
+config EZ_DEV54_UART_GPS
+	bool
+	default y
 
-config EZ_CAM_UART_CAMERA
-	bool "VC0706 camera"
-
-config EZ_CAM_UART_RADAR
-	bool "IWRL6432 radar"
-
-config EZ_CAM_UART_GPS
-	bool "L76K GPS (on-demand fix)"
-
-endchoice
-
-config EZ_CAM_GPS_FIX_TIMEOUT_SECONDS
+config EZ_DEV54_GPS_FIX_TIMEOUT_SECONDS
 	int "Default GPS acquisition timeout, seconds"
-	depends on EZ_CAM_UART_GPS
+	depends on EZ_DEV54_UART_GPS
 	range 10 600
 	default 120
 
-config EZ_CAM_CONNECTION_WATCHDOG
+config EZ_DEV54_CONNECTION_WATCHDOG
 	bool "HaLow and LwM2M connection recovery watchdog"
 	default y
 	help
 	  Confirm registration responses during ordinary operation and after WNM.
 	  Rebuild LwM2M then reconnect Wi-Fi on failure; pause probes during sleep.
 
-config EZ_CAM_CONNECTION_PROBE_SECONDS
+config EZ_DEV54_CONNECTION_PROBE_SECONDS
 	int "Connection watchdog registration probe interval, seconds"
-	depends on EZ_CAM_CONNECTION_WATCHDOG
+	depends on EZ_DEV54_CONNECTION_WATCHDOG
 	range 15 3600
 	default 60
 
-config EZ_CAM_CONNECTION_RESPONSE_SECONDS
+config EZ_DEV54_CONNECTION_RESPONSE_SECONDS
 	int "Connection watchdog response deadline, seconds"
-	depends on EZ_CAM_CONNECTION_WATCHDOG
+	depends on EZ_DEV54_CONNECTION_WATCHDOG
 	range 15 300
 	default 45
 
-config EZ_CAM_WNM_SLEEP
+config EZ_DEV54_WNM_SLEEP
 	bool "LwM2M timed WNM deep sleep object"
 	default y
 	select NET_POWER_MANAGEMENT
@@ -53,64 +43,64 @@ config EZ_CAM_WNM_SLEEP
 	  Object 31026 negotiates WNM sleep with MM8108 chip powerdown, then
 	  exits on a timer. Online DTIM configuration and association are kept.
 
-config EZ_CAM_SENSORS
+config EZ_DEV54_SENSORS
 	bool "On-demand IMU and battery voltage LwM2M objects"
 	default n
 
-config EZ_CAM_WNM_PARK_PINS
+config EZ_DEV54_WNM_PARK_PINS
 	bool "Park HaLow host signal pins during WNM chip powerdown"
-	depends on EZ_CAM_WNM_SLEEP && SOC_NRF54L15_CPUAPP && PM_DEVICE
+	depends on EZ_DEV54_WNM_SLEEP && SOC_NRF54L15_CPUAPP && PM_DEVICE
 	default n
 	help
 	  Experimental WNM-only GPIO isolation. Suspend SPI, disconnect its data
 	  pins and IRQ/BUSY inputs without pulls, and keep RESETn/WAKE low and
 	  CS high. Restore before SDK wake; the module supply remains enabled.
 
-config EZ_CAM_VOLTAGE_SCALE_PPM
+config EZ_DEV54_VOLTAGE_SCALE_PPM
 	int "Battery voltage calibration scale, parts per million"
-	depends on EZ_CAM_SENSORS
+	depends on EZ_DEV54_SENSORS
 	range 500000 2000000
 	default 1000000
 	help
 	  Multiplier applied after the carrier's R26/R29 divider correction.
 	  1000000 means 1.0. Calibrate against measured VBAT+, not USB input.
 
-config EZ_CAM_IMU_OBSERVE_INTERVAL_MS
+config EZ_DEV54_IMU_OBSERVE_INTERVAL_MS
 	int "IMU change sampling interval while observed, milliseconds"
-	depends on EZ_CAM_SENSORS
+	depends on EZ_DEV54_SENSORS
 	range 100 60000
 	default 1000
 
-config EZ_CAM_BLE_PROV
+config EZ_DEV54_BLE_PROV
 	bool "ESP-IDF-compatible BLE provisioning"
 	default n
 
-config EZ_CAM_FACTORY_DATA
+config EZ_DEV54_FACTORY_DATA
 	bool "Use tracker-compatible factory identity and country"
-	default y if EZ_CAM_BLE_PROV
+	default y if EZ_DEV54_BLE_PROV
 	select WIFI_MORSEMICRO_RUNTIME_REGION
 
-config EZ_CAM_PROV_WINDOW_SECONDS
+config EZ_DEV54_PROV_WINDOW_SECONDS
 	int "Provisioning window, seconds"
-	depends on EZ_CAM_BLE_PROV
+	depends on EZ_DEV54_BLE_PROV
 	range 30 600
 	default 120
 
-config EZ_CAM_PROV_SUCCESS_GRACE_SECONDS
+config EZ_DEV54_PROV_SUCCESS_GRACE_SECONDS
 	int "BLE shutdown grace after successful status read"
-	depends on EZ_CAM_BLE_PROV
+	depends on EZ_DEV54_BLE_PROV
 	range 3 30
 	default 5
 
-config EZ_CAM_PROV_RESET_HOLD_SECONDS
+config EZ_DEV54_PROV_RESET_HOLD_SECONDS
 	int "Button hold to clear saved provisioning and reboot"
-	depends on EZ_CAM_BLE_PROV
+	depends on EZ_DEV54_BLE_PROV
 	range 3 15
 	default 5
 
-config EZ_CAM_PROV_TRACKER_UUID
+config EZ_DEV54_PROV_TRACKER_UUID
 	bool "Use tracker ESP32 custom FFF0 service UUID"
-	depends on EZ_CAM_BLE_PROV
+	depends on EZ_DEV54_BLE_PROV
 	default n
 
 

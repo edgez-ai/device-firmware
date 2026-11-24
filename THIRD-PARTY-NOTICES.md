@@ -1,6 +1,6 @@
 # Third-party and component license notices
 
-EZ-CAM01's root [LICENSE](LICENSE) contains Apache-2.0. Dependencies and
+EZ-DEV54's root [LICENSE](LICENSE) contains Apache-2.0. Dependencies and
 separately licensed components remain governed by their own license terms,
 copyright notices and file-level SPDX identifiers. This notice identifies
 the following components; it does not relicense them or replace their terms.

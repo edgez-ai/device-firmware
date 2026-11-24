@@ -43,7 +43,8 @@ async def main(args):
         pop = qr["pop"]
         if not args.name: args.name = qr["name"]
     else:
-        pop = config(args.pop_config).get("CONFIG_EZ_CAM_PROV_POP", "")
+        cfg_pop = config(args.pop_config)
+        pop = cfg_pop.get("CONFIG_EZ_DEV54_PROV_POP", cfg_pop.get("CONFIG_EZ_CAM_PROV_POP", ""))
     cfg = {} if args.check_only else config(local / "halowlink2.conf")
     if not args.check_only: cfg.update(config(args.wifi_config))
     ssid = args.ssid or cfg.get("CONFIG_RADAR_HALOW_SSID", "")

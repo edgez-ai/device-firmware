@@ -2,7 +2,7 @@
  * ESP-IDF-compatible provisioning on Zephyr. Settings/ZMS and bt_disable
  * lifecycle follow template-offgrid-tracker; the wire format is Protocomm. */
 #include "ble_prov.h"
-#if defined(CONFIG_EZ_CAM_BLE_PROV)
+#if defined(CONFIG_EZ_DEV54_BLE_PROV)
 #include "prov_protocol.h"
 #include "halow_sta.h"
 #include "factory_data.h"
@@ -161,7 +161,8 @@ static int load_network(const char *name, size_t length, settings_read_cb read, 
 	wipe(&record, sizeof(record));
 	return 0;
 }
-SETTINGS_STATIC_HANDLER_DEFINE(ezcam, "ezcam", NULL, load_network, NULL, NULL);
+/* On-flash namespace predates the product rename; preserve saved Wi-Fi. */
+SETTINGS_STATIC_HANDLER_DEFINE(ezdev54, "ezcam", NULL, load_network, NULL, NULL);
 
 bool ez_prov_get_credentials(char ssid[33], char password[64])
 {
@@ -217,7 +218,7 @@ static void get_status(void *user, struct prov_status *status)
 	status->ap.auth = active.password_len ? 6 : 0;
 	bool success = wifi_state == 0 && committed;
 	k_mutex_unlock(&config_lock);
-	if (success) (void)k_work_reschedule(&stop_work, K_SECONDS(CONFIG_EZ_CAM_PROV_SUCCESS_GRACE_SECONDS));
+	if (success) (void)k_work_reschedule(&stop_work, K_SECONDS(CONFIG_EZ_DEV54_PROV_SUCCESS_GRACE_SECONDS));
 }
 void ez_prov_wifi_failed(int status)
 {
@@ -310,7 +311,7 @@ static const struct prov_ops ops = {
 };
 static struct prov_protocol protocol = { .ops = &ops };
 
-#ifdef CONFIG_EZ_CAM_PROV_TRACKER_UUID
+#ifdef CONFIG_EZ_DEV54_PROV_TRACKER_UUID
 #define SERVICE_UUID BT_UUID_128_ENCODE(0x0000fff0, 0x0000, 0x1000, 0x8000, 0x00805f9b34fb)
 #define ENDPOINT_UUID(id) BT_UUID_128_ENCODE(0x00000000 | (id), 0x0000, 0x1000, 0x8000, 0x00805f9b34fb)
 #else
@@ -323,7 +324,7 @@ static struct bt_uuid_128 config_uuid = BT_UUID_INIT_128(ENDPOINT_UUID(0xff52));
 static struct bt_uuid_128 scan_uuid = BT_UUID_INIT_128(ENDPOINT_UUID(0xff50));
 static struct bt_uuid_128 version_uuid = BT_UUID_INIT_128(ENDPOINT_UUID(0xff53));
 static const enum prov_endpoint endpoints[] = {PROV_SESSION, PROV_CONFIG, PROV_SCAN, PROV_VERSION};
-static const char version[] = "{\"prov\":{\"ver\":\"v1.1\",\"sec_ver\":1,\"sec_patch_ver\":0,\"cap\":[\"wifi_scan\"]},\"ez-cam01\":{\"ver\":\"1\"}}";
+static const char version[] = "{\"prov\":{\"ver\":\"v1.1\",\"sec_ver\":1,\"sec_patch_ver\":0,\"cap\":[\"wifi_scan\"]},\"ez-dev54\":{\"ver\":\"1\"}}";
 
 static ssize_t read_endpoint(struct bt_conn *conn, const struct bt_gatt_attr *attr,
 			    void *buffer, uint16_t length, uint16_t offset)
@@ -413,7 +414,7 @@ static void begin_window(struct k_work *work)
 	bt_started = true; atomic_set(&window_open, 1);
 	(void)bt_set_name(ez_factory_ble_name());
 	advertise(NULL);
-	(void)k_work_reschedule(&stop_work, K_SECONDS(CONFIG_EZ_CAM_PROV_WINDOW_SECONDS));
+	(void)k_work_reschedule(&stop_work, K_SECONDS(CONFIG_EZ_DEV54_PROV_WINDOW_SECONDS));
 }
 static void stop_window(struct k_work *work)
 {
@@ -454,7 +455,7 @@ void ez_prov_button_changed(bool pressed)
 	atomic_set(&button_pressed, pressed);
 	/* A button held across reboot must be released before another reset. */
 	if (pressed && atomic_get(&reset_armed)) {
-		(void)k_work_reschedule(&reset_work, K_SECONDS(CONFIG_EZ_CAM_PROV_RESET_HOLD_SECONDS));
+		(void)k_work_reschedule(&reset_work, K_SECONDS(CONFIG_EZ_DEV54_PROV_RESET_HOLD_SECONDS));
 	} else if (!pressed) {
 		atomic_set(&reset_armed, 1);
 		(void)k_work_cancel_delayable(&reset_work);

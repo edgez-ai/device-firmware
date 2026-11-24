@@ -1,24 +1,13 @@
-# EZ-CAM01 nRF54L15 + FGH200M UART-device variants.
-# Build from firmware/ with PlatformIO; legacy environments remain camera builds.
+# EZ-DEV54 nRF54L15 + FGH200M unified hardware image.
+# Build from firmware/ with PlatformIO; select external hardware at runtime.
 
 cmake_minimum_required(VERSION 3.20.0)
 
 set(RADAR_NRF54_DIR "${CMAKE_CURRENT_LIST_DIR}/..")
 set(RADAR_REPO_DIR "${RADAR_NRF54_DIR}/..")
 
-# New UART variants share the existing carrier/network profiles. Legacy camera
-# environments keep their flags and overlays when no explicit variant is set.
-if(DEFINED EZ_CAM_UART_VARIANT)
-  string(TOUPPER "${EZ_CAM_UART_VARIANT}" EZ_CAM_UART_VARIANT)
-  if(NOT EZ_CAM_UART_VARIANT MATCHES "^(BASE|CAMERA|RADAR|GPS)$")
-    message(FATAL_ERROR "EZ_CAM_UART_VARIANT must be BASE, CAMERA, RADAR or GPS")
-  endif()
-  string(TOLOWER "${EZ_CAM_UART_VARIANT}" ez_cam_variant)
-  set(DTC_OVERLAY_FILE "${CMAKE_CURRENT_LIST_DIR}/boards/edgez_nrf54l15_halow_${ez_cam_variant}.overlay")
-  set(RADAR_HALOW_CAMERA OFF)
-  if(EZ_CAM_UART_VARIANT STREQUAL "CAMERA")
-    set(RADAR_HALOW_CAMERA ON)
-  endif()
+if(EZ_DEV54_UNIFIED)
+  set(DTC_OVERLAY_FILE "${CMAKE_CURRENT_LIST_DIR}/boards/edgez_nrf54l15_unified.overlay")
 endif()
 
 if(NOT DEFINED DTC_OVERLAY_FILE)
@@ -68,7 +57,7 @@ if(RADAR_HALOWLINK2)
   list(APPEND EXTRA_CONF_FILE "${CMAKE_CURRENT_LIST_DIR}/halowlink2.conf")
   if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/halowlink2-secrets.conf")
     list(APPEND EXTRA_CONF_FILE "${CMAKE_CURRENT_LIST_DIR}/halowlink2-secrets.conf")
-  elseif(NOT EZ_CAM_BLE_PROV)
+  elseif(NOT EZ_DEV54_BLE_PROV)
     message(FATAL_ERROR "Create zephyr/halowlink2-secrets.conf with CONFIG_RADAR_HALOW_PASSWORD for this AP")
   endif()
 endif()
@@ -77,7 +66,7 @@ if(RADAR_HALOW_SLEEP_DIAG)
   list(APPEND EXTRA_CONF_FILE "${CMAKE_CURRENT_LIST_DIR}/halow_sleep_diag.conf")
 endif()
 
-if(EZ_CAM_BLE_PROV)
+if(EZ_DEV54_BLE_PROV)
   list(APPEND EXTRA_CONF_FILE "${CMAKE_CURRENT_LIST_DIR}/ble_prov.conf")
   list(APPEND EXTRA_DTC_OVERLAY_FILE "${CMAKE_CURRENT_LIST_DIR}/factory_data.overlay")
   if(RADAR_HALOW_CAMERA)
@@ -85,14 +74,12 @@ if(EZ_CAM_BLE_PROV)
   endif()
 endif()
 
-if(EZ_CAM_SENSORS)
+if(EZ_DEV54_SENSORS)
   list(APPEND EXTRA_CONF_FILE "${CMAKE_CURRENT_LIST_DIR}/sensors_on_demand.conf")
 endif()
 
-# Apply UART selection after the common/private configs, which historically
-# set simulated presence and the camera's UART mode.
-if(DEFINED ez_cam_variant)
-  list(APPEND EXTRA_CONF_FILE "${CMAKE_CURRENT_LIST_DIR}/variant_${ez_cam_variant}.conf")
+if(EZ_DEV54_UNIFIED)
+  list(APPEND EXTRA_CONF_FILE "${CMAKE_CURRENT_LIST_DIR}/unified.conf")
 endif()
 
 # Pinned EdgeZ Morse Micro Zephyr module. PlatformIO does not use a west
@@ -110,7 +97,7 @@ if(DEFINED ENV{ZEPHYR_BASE} AND EXISTS "$ENV{ZEPHYR_BASE}/scripts/build/gen_kobj
   set(GEN_KOBJECT_LIST "$ENV{ZEPHYR_BASE}/scripts/build/gen_kobject_list.py" CACHE FILEPATH "Zephyr kobject generator" FORCE)
 endif()
 find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
-project(ez_cam01)
+project(ez_dev54)
 
 if(NOT CONFIG_WIFI_MORSEMICRO)
   message(FATAL_ERROR
@@ -199,14 +186,14 @@ if(RADAR_HALOW_LIGHT)
   target_link_libraries(app PRIVATE halow_wakaama)
   target_compile_definitions(app PRIVATE RADAR_HALOW_LIGHT)
   target_sources(app PRIVATE "${RADAR_NRF54_DIR}/src/halow_light.c")
-  if(CONFIG_EZ_CAM_CONNECTION_WATCHDOG)
+  if(CONFIG_EZ_DEV54_CONNECTION_WATCHDOG)
     target_sources(app PRIVATE "${RADAR_NRF54_DIR}/src/halow_connection.c")
   endif()
-  if(CONFIG_EZ_CAM_WNM_SLEEP)
+  if(CONFIG_EZ_DEV54_WNM_SLEEP)
     target_sources(app PRIVATE "${RADAR_NRF54_DIR}/src/halow_sleep.c"
       "${RADAR_NRF54_DIR}/src/halow_wnm.c")
   endif()
-  if(CONFIG_EZ_CAM_WNM_PARK_PINS)
+  if(CONFIG_EZ_DEV54_WNM_PARK_PINS)
     target_sources(app PRIVATE "${RADAR_NRF54_DIR}/src/halow_wnm_pins.c")
   endif()
   if(CONFIG_RADAR_HALOW_SLEEP_DIAG)
@@ -222,19 +209,19 @@ if(RADAR_HALOW_LIGHT)
   endif()
 endif()
 
-if(CONFIG_EZ_CAM_BLE_PROV)
+if(CONFIG_EZ_DEV54_BLE_PROV)
   target_sources(app PRIVATE "${RADAR_NRF54_DIR}/src/ble_prov.c"
     "${RADAR_NRF54_DIR}/src/prov_protocol.c"
     "${RADAR_NRF54_DIR}/src/factory_record.c"
     "${RADAR_NRF54_DIR}/src/factory_data.c")
 endif()
 
-if(CONFIG_EZ_CAM_UART_GPS)
+if(CONFIG_EZ_DEV54_UART_GPS)
   target_sources(app PRIVATE "${RADAR_NRF54_DIR}/src/halow_gps.c"
     "${RADAR_NRF54_DIR}/src/gps_hw.c" "${RADAR_NRF54_DIR}/src/gps_nmea.c")
 endif()
 
-if(CONFIG_EZ_CAM_SENSORS)
+if(CONFIG_EZ_DEV54_SENSORS)
   target_sources(app PRIVATE "${RADAR_NRF54_DIR}/src/sensors_hw.c"
     "${RADAR_NRF54_DIR}/src/halow_sensors.c"
     "${RADAR_NRF54_DIR}/src/halow_device.c"
@@ -242,9 +229,15 @@ if(CONFIG_EZ_CAM_SENSORS)
     "${RADAR_NRF54_DIR}/src/halow_time_sync.c")
   target_include_directories(app PRIVATE "${WAKAAMA_CORE}/coap")
   execute_process(COMMAND git -C "${RADAR_REPO_DIR}" describe --always --dirty
-    OUTPUT_VARIABLE ez_cam_revision OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
-  if(NOT ez_cam_revision)
-    set(ez_cam_revision "unversioned")
+    OUTPUT_VARIABLE ez_dev54_revision OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+  if(NOT ez_dev54_revision)
+    set(ez_dev54_revision "unversioned")
   endif()
-  target_compile_definitions(app PRIVATE EZ_CAM_APP_REV="${ez_cam_revision}")
+  target_compile_definitions(app PRIVATE EZ_DEV54_APP_REV="${ez_dev54_revision}")
+endif()
+
+if(EZ_DEV54_UNIFIED)
+  target_sources(app PRIVATE "${RADAR_NRF54_DIR}/src/hardware_config.c"
+    "${RADAR_NRF54_DIR}/src/hardware_uart.c"
+    "${RADAR_NRF54_DIR}/src/halow_hardware.c")
 endif()

@@ -1,3 +1,4 @@
+#include "hardware_uart.h"
 /* VC0706 capture and legacy LwM2M Camera object 5001 over HaLow. */
 #ifdef RADAR_HALOW_CAMERA
 #include <errno.h>
@@ -31,7 +32,7 @@ LOG_MODULE_REGISTER(halow_camera, CONFIG_RADAR_LOG_LEVEL);
 static const struct device *const uart = DEVICE_DT_GET(DT_ALIAS(camera0));
 static const struct gpio_dt_spec power =
 	GPIO_DT_SPEC_GET(DT_PATH(zephyr_user), camera_power_gpios);
-PINCTRL_DT_DEFINE(DT_ALIAS(camera0));
+PINCTRL_DT_DEV_CONFIG_DECLARE(DT_ALIAS(camera0));
 static const struct pinctrl_dev_config *const camera_pins =
 	PINCTRL_DT_DEV_CONFIG_GET(DT_ALIAS(camera0));
 RING_BUF_DECLARE(rx_ring, 1024);
@@ -81,7 +82,7 @@ static int camera_uart_init(void)
 	if (uart_configured) return 0;
 #if DT_NODE_HAS_PROP(DT_ALIAS(camera0), zephyr_deferred_init)
 	if (!device_is_ready(uart)) {
-		int rc = device_init(uart);
+		int rc = hardware_uart_init();
 
 		if (rc != 0) return rc;
 	}

@@ -23,9 +23,9 @@ is needed. This is network recovery, not a hardware CPU-lockup watchdog.
   fallback for a stale association, missing registration response or failed
   native client state. It never infers health just from a local IP address.
 
-`CONFIG_EZ_CAM_CONNECTION_WATCHDOG` defaults on. Build settings
-`CONFIG_EZ_CAM_CONNECTION_PROBE_SECONDS` (60) and
-`CONFIG_EZ_CAM_CONNECTION_RESPONSE_SECONDS` (45) control the two deadlines.
+`CONFIG_EZ_DEV54_CONNECTION_WATCHDOG` defaults on. Build settings
+`CONFIG_EZ_DEV54_CONNECTION_PROBE_SECONDS` (60) and
+`CONFIG_EZ_DEV54_CONNECTION_RESPONSE_SECONDS` (45) control the two deadlines.
 Probes add registration traffic during normal operation and can affect average
 energy use. They do not change DTIM10 or the UART/logging configuration.
 

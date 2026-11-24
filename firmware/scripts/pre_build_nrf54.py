@@ -99,4 +99,4 @@ for key, value in (
     os.environ[key] = value
 
 print("Morse Micro Zephyr module: %s" % module_root)
-print("EZ-CAM01: UART peripheral variant over LwM2M/HaLow")
+print("EZ-DEV54: UART peripheral variant over LwM2M/HaLow")

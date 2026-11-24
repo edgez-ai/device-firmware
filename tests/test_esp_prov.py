@@ -114,7 +114,7 @@ class Server:
 class Interop(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.temp = tempfile.TemporaryDirectory(prefix="ezcam-proto-test-")
+        cls.temp = tempfile.TemporaryDirectory(prefix="ezdev54-proto-test-")
         library = Path(cls.temp.name) / "protocol.so"
         subprocess.run([os.environ.get("CC", "cc"), "-std=c11", "-Wall", "-Wextra", "-Werror",
                         "-dynamiclib" if sys.platform == "darwin" else "-shared", "-fPIC", "-O1",

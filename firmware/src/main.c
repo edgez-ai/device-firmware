@@ -1,19 +1,14 @@
-/*
- * nRF54L15 + FGH200M host for the IWRL6432 radar.
- *
- *  - uses radar firmware flashed separately over USB;
- *  - receives the autostart radar's output without sending UART commands;
- *  - decodes the radar's result (0/1, range, cluster, points) from the UART;
- *  - joins a Wi-Fi HaLow access point as a station with DTIM power save.
- */
+/* EZ-DEV54: common services with factory/persisted external hardware selection. */
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 
 #include "halow_sta.h"
+#include "hardware_config.h"
+#include "hardware_uart.h"
 #include "ble_prov.h"
 #include "radar_app.h"
 #include "radar_mqtt.h"
-#if defined(CONFIG_EZ_CAM_SENSORS)
+#if defined(CONFIG_EZ_DEV54_SENSORS)
 #include "sensors_hw.h"
 #endif
 
@@ -21,7 +16,9 @@ LOG_MODULE_REGISTER(main, CONFIG_RADAR_LOG_LEVEL);
 
 int main(void)
 {
-#if defined(CONFIG_EZ_CAM_BLE_PROV)
+	(void)hardware_config_init();
+	if (hardware_uart_prepare()) return -1;
+#if defined(CONFIG_EZ_DEV54_BLE_PROV)
 	int prov_rc = ez_prov_init();
 	if (prov_rc) LOG_ERR("Provisioning init failed: %d", prov_rc);
 #endif
@@ -30,7 +27,7 @@ int main(void)
 	if (rc != 0) {
 		LOG_ERR("radar start failed: %d", rc);
 	}
-#if defined(CONFIG_EZ_CAM_SENSORS)
+#if defined(CONFIG_EZ_DEV54_SENSORS)
 	int sensors_rc = board_sensors_init();
 	if (sensors_rc) LOG_WRN("Sensor standby initialization: %d", sensors_rc);
 #endif

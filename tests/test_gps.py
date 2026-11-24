@@ -18,7 +18,7 @@ class Gps(unittest.TestCase):
             source.write_text(re.sub(r'^#include [<"]zephyr/[^>"\n]+[>"]\n', '', original, flags=re.M))
             binary = tmp/'gps-hw'
             subprocess.run(['cc', '-std=c11', '-Wall', '-Wextra', '-Werror',
-                            '-fsanitize=address,undefined', '-DCONFIG_EZ_CAM_UART_GPS=1', '-DRADAR_HALOW_LIGHT',
+                            '-fsanitize=address,undefined', '-DCONFIG_EZ_DEV54_UART_GPS=1', '-DRADAR_HALOW_LIGHT',
                             '-I'+str(ROOT/'tests/native'), '-I'+str(ROOT/'firmware/src'),
                             '-include', str(ROOT/'tests/native/gps_hw_shim.h'),
                             str(source), str(ROOT/'tests/native/gps_hw.c'), '-o', str(binary)], check=True)
@@ -31,7 +31,7 @@ class Gps(unittest.TestCase):
             binary = Path(folder) / 'gps'
             subprocess.run(['cc', '-std=c11', '-Wall', '-Wextra', '-Werror',
                             '-fsanitize=address,undefined', '-DLWM2M_CLIENT_MODE',
-                            '-DCONFIG_EZ_CAM_UART_GPS=1', '-DCONFIG_EZ_CAM_GPS_FIX_TIMEOUT_SECONDS=120',
+                            '-DCONFIG_EZ_DEV54_UART_GPS=1', '-DCONFIG_EZ_DEV54_GPS_FIX_TIMEOUT_SECONDS=120',
                             '-I'+str(ROOT/'tests/native'), '-I'+str(ROOT/'firmware/src'),
                             '-I'+str(ROOT/'third_party/wakaama/include'),
                             str(ROOT/'firmware/src/halow_gps.c'), str(ROOT/'firmware/src/gps_nmea.c'),

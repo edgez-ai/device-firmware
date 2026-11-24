@@ -196,7 +196,7 @@ int prov_protocol_exchange(struct prov_protocol *p, enum prov_endpoint endpoint,
 	    length > PROV_PACKET_MAX || (!request && length)) return -EINVAL;
 	struct writer w = {response, 0, capacity, false};
 	if (endpoint == PROV_VERSION) {
-		const char version[] = "{\"prov\":{\"ver\":\"v1.1\",\"sec_ver\":1,\"sec_patch_ver\":0,\"cap\":[\"wifi_scan\"]},\"ez-cam01\":{\"ver\":\"1\"}}";
+		const char version[] = "{\"prov\":{\"ver\":\"v1.1\",\"sec_ver\":1,\"sec_patch_ver\":0,\"cap\":[\"wifi_scan\"]},\"ez-dev54\":{\"ver\":\"1\"}}";
 		put(&w, version, sizeof(version) - 1); return finish(&w);
 	}
 	int rc;

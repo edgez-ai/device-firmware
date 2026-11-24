@@ -1,9 +1,9 @@
 /* SPDX-License-Identifier: Apache-2.0 */
-#ifndef EZ_CAM_BLE_PROV_H
-#define EZ_CAM_BLE_PROV_H
+#ifndef EZ_DEV54_BLE_PROV_H
+#define EZ_DEV54_BLE_PROV_H
 #include <stdbool.h>
 struct net_if;
-#if defined(CONFIG_EZ_CAM_BLE_PROV)
+#if defined(CONFIG_EZ_DEV54_BLE_PROV)
 int ez_prov_init(void);
 int ez_prov_forget_network(void);
 bool ez_prov_get_credentials(char ssid[33], char password[64]);

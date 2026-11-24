@@ -17,7 +17,7 @@ class WnmSleep(unittest.TestCase):
             binary = Path(tmp)/'wnm-sleep'
             subprocess.run(['cc','-std=c11','-Wall','-Wextra','-Werror',
                 '-fsanitize=address,undefined','-DLWM2M_CLIENT_MODE',
-                *(['-DCONFIG_EZ_CAM_WNM_PARK_PINS=1'] if parking else []),
+                *(['-DCONFIG_EZ_DEV54_WNM_PARK_PINS=1'] if parking else []),
                 '-I'+str(ROOT/'tests/native/wnm_platform'), '-I'+str(ROOT/'tests/native'),
                 '-I'+str(ROOT/'firmware/src'), '-I'+str(ROOT/'third_party/wakaama/include'),
                 str(ROOT/'firmware/src/halow_sleep.c'),str(ROOT/'firmware/src/halow_wnm.c'),

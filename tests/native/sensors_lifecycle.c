@@ -219,3 +219,5 @@ int main(int argc, char **argv)
     } else return 2;
     puts("OK"); return 0;
 }
+
+const char *hardware_type_name(void) { return "HaLow camera with IMU"; }

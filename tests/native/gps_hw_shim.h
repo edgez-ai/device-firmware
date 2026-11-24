@@ -14,7 +14,7 @@ struct gpio_dt_spec { int pin; };
 #define GPIO_OUTPUT_INACTIVE 0
 struct pinctrl_dev_config { int unused; };
 extern struct pinctrl_dev_config gps_pins;
-#define PINCTRL_DT_DEFINE(n)
+#define PINCTRL_DT_DEV_CONFIG_DECLARE(n)
 #define PINCTRL_DT_DEV_CONFIG_GET(n) (&gps_pins)
 #define PINCTRL_STATE_SLEEP 1
 struct ring_buf { uint8_t data[512]; size_t count; };

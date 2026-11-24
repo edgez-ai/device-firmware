@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
-#ifndef EZ_CAM_HALOW_SENSORS_H
-#define EZ_CAM_HALOW_SENSORS_H
+#ifndef EZ_DEV54_HALOW_SENSORS_H
+#define EZ_DEV54_HALOW_SENSORS_H
 #include "liblwm2m.h"
 #include <stdbool.h>
 extern lwm2m_object_t halow_accelerometer, halow_gyrometer;

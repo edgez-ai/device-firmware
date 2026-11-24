@@ -1,6 +1,6 @@
 # Device information, battery voltage and IMU over LwM2M
 
-Camera environments enable `EZ_CAM_SENSORS`. The BLE camera image also
+Camera environments enable `EZ_DEV54_SENSORS`. The BLE camera image also
 retains its deferred UART initialization test. Sensors are registered in the
 existing Wakaama client alongside camera, light and button objects.
 
@@ -25,7 +25,7 @@ Voltage object 3316. It uses the standard [OMA Device definition](https://raw.gi
 
 | Resources | Behavior |
 | --- | --- |
-| 0, 1, 2, 3 | EdgeZ.ai, EZ-CAM01, factory serial (hardware ID fallback), firmware Git revision |
+| 0, 1, 2, 3 | EdgeZ.ai, EZ-DEV54, factory serial (hardware ID fallback), firmware Git revision |
 | 4, 5 | Execute reboot / reset saved provisioning; reset preserves factory identity and keys |
 | 6 | Available source instance 0: internal battery/input rail (1) |
 | 7 | Source instance 0: measured integer mV; ADC active only during Read |
@@ -67,7 +67,7 @@ powered.
 
 A native LwM2M Observe subscription on an IMU measurement, instance or object
 keeps the requested IMU engine running. The LwM2M thread checks for changes
-every 1000 ms by default. `CONFIG_EZ_CAM_IMU_OBSERVE_INTERVAL_MS` selects
+every 1000 ms by default. `CONFIG_EZ_DEV54_IMU_OBSERVE_INTERVAL_MS` selects
 100–60000 ms at build time. The IMU itself uses 12.5 Hz ODR, ±2 g acceleration
 and ±125 degrees/s angular rate; conversion to the resource units happens on
 read. I2C is suspended between read transactions even during observation.
@@ -168,7 +168,7 @@ USB input and battery voltage must not be used interchangeably when calibrating.
 For example, 5.149 V USB input and roughly 4.154 V at BAT may be normal. A direct
 VBAT+ measurement against board GND is the reference for physical calibration.
 
-`CONFIG_EZ_CAM_VOLTAGE_SCALE_PPM` adds an optional build-time calibration multiplier
+`CONFIG_EZ_DEV54_VOLTAGE_SCALE_PPM` adds an optional build-time calibration multiplier
 after the physical 2:1 divider correction. Default `1000000` is ×1.0, with a
 range of ×0.5–×2.0. Use `round(actual_VBAT_mV / reported_mV * 1000000)` only after
 the two values refer to the same net and stable supply. For a verified 3300 mV
@@ -178,7 +178,7 @@ away. Both Device voltage and its battery percentage use the corrected value.
 
 
 For this carrier the operator requested a fixed **×1.13** correction; the
-camera sensor profile sets `CONFIG_EZ_CAM_VOLTAGE_SCALE_PPM=1130000`.
+camera sensor profile sets `CONFIG_EZ_DEV54_VOLTAGE_SCALE_PPM=1130000`.
 This is an operator-selected correction, not a calibrated accuracy guarantee.
 A previous reported 2912 mV becomes approximately 3291 mV. The Kconfig fallback
 remains unity for other profiles. The selected delay is 100 ms, not 500 ms.

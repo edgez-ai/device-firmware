@@ -97,8 +97,8 @@ subsequent disconnected-SWD measurement confirmed approximately 1 mW.
 
 ## Experimental WNM-only GPIO parking
 
-Build `pio run -e ez-cam01-wnm-pins` from `firmware/` for the BLE camera
-profile with `CONFIG_EZ_CAM_WNM_PARK_PINS=y`. The ordinary profiles leave this
+Enable `CONFIG_EZ_DEV54_WNM_PARK_PINS=y` in the unified configuration for the
+profile with `CONFIG_EZ_DEV54_WNM_PARK_PINS=y`. The ordinary profiles leave this
 option off for an A/B comparison. No module supply switching is performed.
 
 Parking runs only after successful SDK WNM chip powerdown, when the SDK has
@@ -161,7 +161,7 @@ Run `python3 tests/test_wnm_sleep.py` for the real object state machine and
 platform wrapper against a fake AP and clock, under ASan/UBSan. It covers the
 response grace period, duration limits, actual timer, pending transaction
 protection, network TX drain, AP rejection, exit failure, link loss and repeated
-requests. Build either `ez-cam01` or `ez-cam01-ble-prov` as usual.
+requests. Build `ez-dev54` as usual.
 
 A successful build does not prove WNM entry or reduced standby power. Verify
 Execute response, timeout while asleep, post-wake Read/Write, cycle count and
