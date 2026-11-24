@@ -12,6 +12,7 @@
 #endif
 
 #include "radar_app.h"
+#include "ble_prov.h"
 #include "halow_light.h"
 #ifdef RADAR_HALOW_CAMERA
 #include "halow_camera.h"
@@ -88,6 +89,9 @@ static void simulation_debounced(struct k_work *work)
 	ARG_UNUSED(work);
 	if (sample >= 0 && sample != sim_stable_button) {
 		sim_stable_button = sample;
+#if defined(CONFIG_EZ_CAM_BLE_PROV)
+		ez_prov_button_changed(sample != 0);
+#endif
 #ifdef RADAR_HALOW_LIGHT
 		halow_light_button_changed(sample != 0);
 #else
@@ -143,6 +147,9 @@ static int button_init(void)
 		return sim_initial_button;
 	}
 	sim_stable_button = sim_initial_button;
+#if defined(CONFIG_EZ_CAM_BLE_PROV)
+	ez_prov_button_changed(sim_stable_button != 0);
+#endif
 	k_work_init_delayable(&sim_debounce, simulation_debounced);
 	gpio_init_callback(&sim_button_cb, simulation_button_edge, BIT(sim_button.pin));
 	rc = gpio_add_callback(sim_button.port, &sim_button_cb);

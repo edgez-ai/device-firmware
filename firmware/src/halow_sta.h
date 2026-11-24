@@ -16,3 +16,7 @@ int halow_sta_start(void);
 bool halow_sta_is_online(void);
 
 #endif /* HALOW_STA_H */
+
+#if defined(CONFIG_EZ_CAM_BLE_PROV)
+int halow_sta_reconnect(void);
+#endif

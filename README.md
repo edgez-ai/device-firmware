@@ -36,13 +36,24 @@ Dependencies are local submodules, with no sibling-repository lookup:
 
 | Dependency | Pinned revision |
 | --- | --- |
-| EdgeZ `mm-iot-zephyr` | `947f1e4fb4cb6d0833c86ecb2feb3afecd12e96e` |
+| EdgeZ `mm-iot-zephyr` | `31e94bda2b18709b4d5d088f8462670bd079da0e` |
 | EdgeZ Wakaama client core | `b68607938ce43160cd9abe1bd14bcc3d483e9c04` |
 | Seeed PlatformIO platform | `c41f41ec51c8cf91550adc8b1487e1b093c8605c` |
 | Zephyr / Arm toolchain | 4.4.0 / 14.2.1, as pinned in `firmware/platformio.ini` |
 
 Nested SDK/radio dependencies are pinned by the EdgeZ module. Update a pin
 deliberately; `git submodule update --remote` is not part of a normal build.
+
+## BLE provisioning
+
+An optional `ez-cam01-ble-prov` environment adds compatibility with the
+Espressif ESP BLE Prov app, persistent onboarding and a five-second button
+reset. Country comes from factory storage; a complete factory Wi-Fi profile
+has priority over BLE-saved credentials. See the [factory and BLE guide](docs/BLE-PROVISIONING.md)
+for the provisioning/flashing script and verification commands.
+
+The factory-country hook is committed on the module’s `edgez` branch.
+The submodule remains pinned to the exact revision above.
 
 ## Flash over J-Link
 

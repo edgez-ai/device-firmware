@@ -80,3 +80,64 @@ before measuring the flat sleep floor; this run contains no new meter result.
 Build/upload, startup-register and LwM2M logs are saved under the local
 Git-ignored `artifacts/ez-cam01-baseline/` directory. These source files and validation notes are included in the camera migration
 commit at the operator's request. No push is part of that request.
+
+## Factory country and ESP-compatible BLE provisioning — 2026-11-24
+
+Built and flashed the optional `ez-cam01-ble-prov` profile. Clean build passed
+in 185.76 seconds; a final incremental consistency build passed in 14.20
+seconds. Flash usage is 960584 bytes and static RAM usage is 249309/262144
+bytes (95.1%). The 64 KiB JPEG cache and existing 64 KiB kernel heap remain.
+Firmware HEX SHA256:
+`b493b12473b31a8f0f1b21d470875d95b40646b9ff3c4c9f1e67d5e3a753427a`.
+J-Link programmed and verified 970752 bytes, then reset/run. No mass erase
+or chip recovery was performed.
+
+The pre-existing tracker v2 factory page was backed up locally. It had US
+country and empty Wi-Fi fields. With explicit operator authorization, changed
+country to EU and retained empty Wi-Fi, preserving serial, public/private
+identity keys, channel field and trailing page bytes. The dedicated page was
+programmed and verified at `0x165000`. The factory-derived advertised name is
+`PROV_CAM95a863`. The EdgeZ module's optional initial-country hook reads the
+validated factory record before RF startup; this feature is committed on module
+branch `edgez` at `31e94bd`, based on `947f1e4`.
+
+All 12 host tests passed: seven C protocol interoperability tests against
+Espressif's unmodified Security 1 Python client, and five factory reader/writer
+interoperability, CRC rejection, identity-preserving update and output-safety
+tests. These cover the protocol; the official phone app UI was not exercised.
+
+Real BLE hardware verification used the same Espressif client over Bleak:
+
+- Security 1 mutual proof succeeded using the factory-derived PoP.
+- Encrypted HaLow scan completed with two AP results.
+- Approved local WPA3 credentials were sent through the authenticated session.
+- DHCP assigned `192.168.12.112`; successful status was reported only after
+  the Settings/ZMS write completed.
+- Endpoint `halow-5037cdf35bb6` registered to HaLowLink2 Wakaama. Resource
+  `/5001/0/2` returned CoAP 2.05 with zero image length, and `/5001/0/5`
+  returned the full 65536-byte cache capacity.
+- Software reset reloaded saved credentials without starting BLE, and a live
+  LwM2M resource read succeeded afterward.
+- Operator held and released the physical button for at least five seconds.
+  Saved/active flags became false and BLE advertising reopened. A second
+  authenticated scan/provision/save cycle succeeded with the same factory PoP.
+
+The initial prototype could authenticate but failed on short encrypted
+messages. Mbed TLS rejects in-place cipher updates for a non-block-sized
+length, including CTR mode; using a separate output buffer fixed this on
+hardware. macOS cached the previous firmware's peripheral name, so the live
+helper matches the current advertisement's local name instead.
+
+After successful provisioning, SWD snapshots confirmed the BLE window closed,
+`bt_started=0`, settings committed, camera UART22 ENABLE=0, SPIM00 ENABLE=0,
+SAADC ENABLE=0, camera power low, and image length zero. Logging, console and
+RTT remain disabled; dynamic PS remains 13 ms, listen interval 0, and health
+check 600 seconds. AP beacon, 1 MHz bandwidth and DTIM10 were not changed.
+No Capture execute was sent during these tests.
+
+This run does not establish a new power measurement. J-Link remained attached
+for state inspection; a disconnected-SWD cold-start meter comparison against
+the approximately 3 mW baseline remains necessary. Factory-first Wi-Fi
+precedence is implemented; the hardware run intentionally used empty factory
+Wi-Fi to test the BLE-saved path. Factory-page readback, binaries and private
+provisioning logs are saved locally under ignored `artifacts/ez-cam01-ble-prov/`.

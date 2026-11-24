@@ -53,13 +53,18 @@ if(RADAR_HALOWLINK2)
   list(APPEND EXTRA_CONF_FILE "${CMAKE_CURRENT_LIST_DIR}/halowlink2.conf")
   if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/halowlink2-secrets.conf")
     list(APPEND EXTRA_CONF_FILE "${CMAKE_CURRENT_LIST_DIR}/halowlink2-secrets.conf")
-  else()
+  elseif(NOT EZ_CAM_BLE_PROV)
     message(FATAL_ERROR "Create zephyr/halowlink2-secrets.conf with CONFIG_RADAR_HALOW_PASSWORD for this AP")
   endif()
 endif()
 
 if(RADAR_HALOW_SLEEP_DIAG)
   list(APPEND EXTRA_CONF_FILE "${CMAKE_CURRENT_LIST_DIR}/halow_sleep_diag.conf")
+endif()
+
+if(EZ_CAM_BLE_PROV)
+  list(APPEND EXTRA_CONF_FILE "${CMAKE_CURRENT_LIST_DIR}/ble_prov.conf")
+  list(APPEND EXTRA_DTC_OVERLAY_FILE "${CMAKE_CURRENT_LIST_DIR}/factory_data.overlay")
 endif()
 
 # Pinned EdgeZ Morse Micro Zephyr module. PlatformIO does not use a west
@@ -177,4 +182,11 @@ if(RADAR_HALOW_LIGHT)
     target_sources(app PRIVATE "${RADAR_NRF54_DIR}/src/halow_camera.c")
     target_link_options(zephyr_interface INTERFACE -Wl,--wrap=lwm2m_data_serialize)
   endif()
+endif()
+
+if(CONFIG_EZ_CAM_BLE_PROV)
+  target_sources(app PRIVATE "${RADAR_NRF54_DIR}/src/ble_prov.c"
+    "${RADAR_NRF54_DIR}/src/prov_protocol.c"
+    "${RADAR_NRF54_DIR}/src/factory_record.c"
+    "${RADAR_NRF54_DIR}/src/factory_data.c")
 endif()

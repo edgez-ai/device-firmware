@@ -1,0 +1,9 @@
+/* Same dedicated 4 KiB factory page as template-offgrid-tracker. */
+&cpuapp_rram {
+	partitions {
+		factory_partition: partition@165000 {
+			label = "factory-data";
+			reg = <0x165000 0x1000>;
+		};
+	};
+};

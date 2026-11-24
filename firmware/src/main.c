@@ -10,6 +10,7 @@
 #include <zephyr/logging/log.h>
 
 #include "halow_sta.h"
+#include "ble_prov.h"
 #include "radar_app.h"
 #include "radar_mqtt.h"
 
@@ -17,6 +18,10 @@ LOG_MODULE_REGISTER(main, CONFIG_RADAR_LOG_LEVEL);
 
 int main(void)
 {
+#if defined(CONFIG_EZ_CAM_BLE_PROV)
+	int prov_rc = ez_prov_init();
+	if (prov_rc) LOG_ERR("Provisioning init failed: %d", prov_rc);
+#endif
 	int rc = radar_app_start();
 
 	if (rc != 0) {
