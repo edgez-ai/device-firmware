@@ -1,0 +1,21 @@
+#include "edgez_nrf54l15_halow_light_radar.overlay"
+
+/ {
+	aliases {
+		gps0 = &uart22;
+	};
+	zephyr,user {
+		gps-power-gpios = <&gpio1 9 GPIO_ACTIVE_HIGH>;
+	};
+};
+
+&radar_uart_default {
+	group2 {
+		/delete-property/ bias-pull-up;
+	};
+};
+
+&uart22 {
+	current-speed = <9600>;
+	zephyr,deferred-init;
+};

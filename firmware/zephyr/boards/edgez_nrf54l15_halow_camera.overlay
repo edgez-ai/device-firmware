@@ -7,9 +7,6 @@
 	};
 	zephyr,user {
 		camera-power-gpios = <&gpio1 9 GPIO_ACTIVE_HIGH>;
-		/* WNM-only passive pins: SCK, MOSI, MISO, IRQ, BUSY. */
-		wnm-park-gpios = <&gpio2 1 0>, <&gpio2 2 0>, <&gpio2 4 0>,
-				 <&gpio1 6 0>, <&gpio1 10 0>;
 	};
 };
 

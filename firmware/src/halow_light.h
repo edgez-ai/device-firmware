@@ -8,6 +8,7 @@ int halow_light_start(bool initial_pressed);
 void halow_light_button_changed(bool pressed);
 void halow_light_radar_sample(bool present, float range_m);
 void halow_light_link_changed(bool connected);
+void halow_light_wake(void);
 #else
 static inline void halow_light_link_changed(bool connected) { (void)connected; }
 #endif

@@ -26,6 +26,9 @@
 	};
 
 	zephyr,user {
+		/* WNM-only passive pins, shared by every UART variant. */
+		wnm-park-gpios = <&gpio2 1 0>, <&gpio2 2 0>, <&gpio2 4 0>,
+				 <&gpio1 6 0>, <&gpio1 10 0>;
 		/* Active = radar 3.3 V supply on. */
 		radar-power-gpios = <&gpio1 9 GPIO_ACTIVE_HIGH>;
 	};

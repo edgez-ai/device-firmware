@@ -1,10 +1,25 @@
-# EZ-CAM01 nRF54L15 + FGH200M camera firmware.
-# Build from firmware/ with PlatformIO; platformio.ini supplies the camera flags.
+# EZ-CAM01 nRF54L15 + FGH200M UART-device variants.
+# Build from firmware/ with PlatformIO; legacy environments remain camera builds.
 
 cmake_minimum_required(VERSION 3.20.0)
 
 set(RADAR_NRF54_DIR "${CMAKE_CURRENT_LIST_DIR}/..")
 set(RADAR_REPO_DIR "${RADAR_NRF54_DIR}/..")
+
+# New UART variants share the existing carrier/network profiles. Legacy camera
+# environments keep their flags and overlays when no explicit variant is set.
+if(DEFINED EZ_CAM_UART_VARIANT)
+  string(TOUPPER "${EZ_CAM_UART_VARIANT}" EZ_CAM_UART_VARIANT)
+  if(NOT EZ_CAM_UART_VARIANT MATCHES "^(BASE|CAMERA|RADAR|GPS)$")
+    message(FATAL_ERROR "EZ_CAM_UART_VARIANT must be BASE, CAMERA, RADAR or GPS")
+  endif()
+  string(TOLOWER "${EZ_CAM_UART_VARIANT}" ez_cam_variant)
+  set(DTC_OVERLAY_FILE "${CMAKE_CURRENT_LIST_DIR}/boards/edgez_nrf54l15_halow_${ez_cam_variant}.overlay")
+  set(RADAR_HALOW_CAMERA OFF)
+  if(EZ_CAM_UART_VARIANT STREQUAL "CAMERA")
+    set(RADAR_HALOW_CAMERA ON)
+  endif()
+endif()
 
 if(NOT DEFINED DTC_OVERLAY_FILE)
   set(DTC_OVERLAY_FILE "${CMAKE_CURRENT_LIST_DIR}/boards/edgez_nrf54l15_fgh200m_radar.overlay")
@@ -64,12 +79,20 @@ endif()
 
 if(EZ_CAM_BLE_PROV)
   list(APPEND EXTRA_CONF_FILE "${CMAKE_CURRENT_LIST_DIR}/ble_prov.conf")
-  list(APPEND EXTRA_DTC_OVERLAY_FILE "${CMAKE_CURRENT_LIST_DIR}/factory_data.overlay"
-    "${CMAKE_CURRENT_LIST_DIR}/camera_uart_deferred.overlay")
+  list(APPEND EXTRA_DTC_OVERLAY_FILE "${CMAKE_CURRENT_LIST_DIR}/factory_data.overlay")
+  if(RADAR_HALOW_CAMERA)
+    list(APPEND EXTRA_DTC_OVERLAY_FILE "${CMAKE_CURRENT_LIST_DIR}/camera_uart_deferred.overlay")
+  endif()
 endif()
 
 if(EZ_CAM_SENSORS)
   list(APPEND EXTRA_CONF_FILE "${CMAKE_CURRENT_LIST_DIR}/sensors_on_demand.conf")
+endif()
+
+# Apply UART selection after the common/private configs, which historically
+# set simulated presence and the camera's UART mode.
+if(DEFINED ez_cam_variant)
+  list(APPEND EXTRA_CONF_FILE "${CMAKE_CURRENT_LIST_DIR}/variant_${ez_cam_variant}.conf")
 endif()
 
 # Pinned EdgeZ Morse Micro Zephyr module. PlatformIO does not use a west
@@ -204,6 +227,11 @@ if(CONFIG_EZ_CAM_BLE_PROV)
     "${RADAR_NRF54_DIR}/src/prov_protocol.c"
     "${RADAR_NRF54_DIR}/src/factory_record.c"
     "${RADAR_NRF54_DIR}/src/factory_data.c")
+endif()
+
+if(CONFIG_EZ_CAM_UART_GPS)
+  target_sources(app PRIVATE "${RADAR_NRF54_DIR}/src/halow_gps.c"
+    "${RADAR_NRF54_DIR}/src/gps_hw.c" "${RADAR_NRF54_DIR}/src/gps_nmea.c")
 endif()
 
 if(CONFIG_EZ_CAM_SENSORS)

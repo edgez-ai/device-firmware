@@ -1,0 +1,14 @@
+#include "edgez_nrf54l15_halow_light_radar.overlay"
+
+&uart22 {
+	status = "disabled";
+};
+
+&gpio1 {
+	radar_power_off: peripheral-power-off {
+		gpio-hog;
+		gpios = <9 GPIO_ACTIVE_HIGH>;
+		output-low;
+		line-name = "UART peripheral power off";
+	};
+};

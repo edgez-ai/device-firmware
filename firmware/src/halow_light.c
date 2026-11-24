@@ -22,6 +22,9 @@
 #include "liblwm2m.h"
 #include "halow_light.h"
 #include "halow_sta.h"
+#if defined(CONFIG_EZ_CAM_UART_GPS)
+#include "halow_gps.h"
+#endif
 #if defined(CONFIG_EZ_CAM_CONNECTION_WATCHDOG)
 #include "halow_connection.h"
 #endif
@@ -31,11 +34,11 @@
 #endif
 #ifdef RADAR_HALOW_CAMERA
 #include "halow_camera.h"
+#endif
 #if defined(CONFIG_EZ_CAM_SENSORS)
 #include "halow_sensors.h"
 #include "halow_device.h"
 #include "halow_time_sync.h"
-#endif
 #endif
 
 LOG_MODULE_REGISTER(halow_light, CONFIG_RADAR_LOG_LEVEL);
@@ -580,6 +583,9 @@ static void run(void *unused1, void *unused2, void *unused3)
 #ifdef RADAR_HALOW_CAMERA
 		&halow_camera,
 #endif
+#if defined(CONFIG_EZ_CAM_UART_GPS)
+		&halow_gps_location, &halow_gps_control,
+#endif
 #if defined(CONFIG_EZ_CAM_SENSORS)
 		&halow_accelerometer, &halow_gyrometer,
 #endif
@@ -607,6 +613,9 @@ static void run(void *unused1, void *unused2, void *unused3)
 		/* Stop sensor clocks before negotiation; preserve context/Observe state.
 		 * A suspended IP iface also blocks independent ARP/DHCP transmissions. */
 		if (halow_sleep_pending() || halow_sleep_active()) {
+#if defined(CONFIG_EZ_CAM_UART_GPS)
+			(void)halow_gps_step(ctx, false);
+#endif
 #if defined(CONFIG_EZ_CAM_SENSORS)
 			(void)halow_sensors_step(NULL);
 			(void)halow_device_step(NULL);
@@ -654,6 +663,9 @@ static void run(void *unused1, void *unused2, void *unused3)
 #endif
 		atomic_val_t generation = atomic_get(&link_generation);
 		if (generation != active || reset_context) {
+#if defined(CONFIG_EZ_CAM_UART_GPS)
+			(void)halow_gps_step(NULL, false);
+#endif
 			if (link.fd >= 0) zsock_close(link.fd);
 			link.fd = -1;
 #if defined(CONFIG_EZ_CAM_SENSORS)
@@ -715,6 +727,14 @@ static void run(void *unused1, void *unused2, void *unused3)
 #endif
 		process_button(ctx);
 
+#if defined(CONFIG_EZ_CAM_UART_GPS)
+		bool gps_allow = ctx != NULL;
+#if defined(CONFIG_EZ_CAM_WNM_SLEEP)
+		gps_allow = gps_allow && !halow_sleep_pending();
+#endif
+		int gps_wait = halow_gps_step(ctx, gps_allow);
+#endif
+
 #if defined(CONFIG_EZ_CAM_SENSORS)
 		lwm2m_context_t *sampling_ctx = ctx;
 #if defined(CONFIG_EZ_CAM_WNM_SLEEP)
@@ -741,6 +761,9 @@ static void run(void *unused1, void *unused2, void *unused3)
 		int connection_wait = halow_connection_wait_ms();
 		if (connection_wait >= 0 && (wait_ms < 0 || connection_wait < wait_ms)) wait_ms = connection_wait;
 #endif
+#if defined(CONFIG_EZ_CAM_UART_GPS)
+		if (gps_wait >= 0 && (wait_ms < 0 || gps_wait < wait_ms)) wait_ms = gps_wait;
+#endif
 		struct zsock_pollfd fds[] = {
 			{.fd = wake_fd, .events = ZSOCK_POLLIN},
 			{.fd = link.fd, .events = ZSOCK_POLLIN},
@@ -755,6 +778,11 @@ static void run(void *unused1, void *unused2, void *unused3)
 			}
 		}
 	}
+}
+
+void halow_light_wake(void)
+{
+	if (wake_fd >= 0) eventfd_write(wake_fd, 1);
 }
 
 void halow_light_button_changed(bool pressed)

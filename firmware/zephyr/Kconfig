@@ -1,6 +1,30 @@
 # nRF54L15 + FGH200M host firmware for the IWRL6432 radar.
 
-menu "IWRL6432 radar host"
+menu "EZ-CAM01 UART device and HaLow services"
+
+choice EZ_CAM_UART_DEVICE
+	prompt "Carrier UART device"
+	default EZ_CAM_UART_CAMERA
+
+config EZ_CAM_UART_BASE
+	bool "Base (no UART device)"
+
+config EZ_CAM_UART_CAMERA
+	bool "VC0706 camera"
+
+config EZ_CAM_UART_RADAR
+	bool "IWRL6432 radar"
+
+config EZ_CAM_UART_GPS
+	bool "L76K GPS (on-demand fix)"
+
+endchoice
+
+config EZ_CAM_GPS_FIX_TIMEOUT_SECONDS
+	int "Default GPS acquisition timeout, seconds"
+	depends on EZ_CAM_UART_GPS
+	range 10 600
+	default 120
 
 config EZ_CAM_CONNECTION_WATCHDOG
 	bool "HaLow and LwM2M connection recovery watchdog"

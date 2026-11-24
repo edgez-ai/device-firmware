@@ -17,6 +17,9 @@
 #ifdef RADAR_HALOW_CAMERA
 #include "halow_camera.h"
 #endif
+#if defined(CONFIG_EZ_CAM_UART_GPS)
+#include "halow_gps.h"
+#endif
 #include "radar_link.h"
 #include "radar_mqtt.h"
 #ifdef CONFIG_RADAR_CONFIGURE_SENSOR
@@ -119,7 +122,7 @@ static int button_init(void)
 	if (!gpio_is_ready_dt(&sim_button) || !gpio_is_ready_dt(&sim_led)) {
 		return -ENODEV;
 	}
-#if defined(CONFIG_RADAR_SIMULATE_PRESENCE) && !defined(RADAR_HALOW_CAMERA)
+#if defined(CONFIG_EZ_CAM_UART_BASE)
 	/* Explicitly release old UART state too, including after debug resets.
 	 * The simulator has no serial driver/device and does not drive TX/RX. */
 	nrf_uarte_disable((NRF_UARTE_Type *)DT_REG_ADDR(DT_NODELABEL(uart22)));
@@ -404,6 +407,11 @@ int radar_app_start(void)
 	}
 #endif
 #ifdef RADAR_HALOW_LIGHT
+
+#if defined(CONFIG_EZ_CAM_UART_GPS)
+	rc = halow_gps_init();
+	if (rc != 0) LOG_ERR("GPS initialization failed: %d", rc);
+#endif
 	rc = halow_light_start(sim_stable_button != 0);
 	if (rc != 0 || IS_ENABLED(CONFIG_RADAR_SIMULATE_PRESENCE)) {
 		return rc;

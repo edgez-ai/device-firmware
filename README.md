@@ -12,6 +12,11 @@ the rejected extra UART resume/suspend cycle is not included.
 
 ## Build
 
+Four UART device variants are available: **base** (no UART device), **camera**
+(VC0706), **radar** (IWRL6432), and **GPS** (L76K, acquire on request then
+power off). See [variant builds, wiring and resources](docs/VARIANTS.md).
+The existing default and legacy environments remain camera profiles.
+
 Install PlatformIO and initialize the pinned Git submodules:
 
 ```sh

@@ -2,6 +2,19 @@
  * Device /3/0 with real identity, battery-input voltage and system state.
  */
 #include "halow_device.h"
+#if defined(CONFIG_EZ_CAM_UART_BASE)
+#define EZ_CAM_MODEL "EZ-CAM01 Base"
+#define EZ_CAM_TYPE "HaLow base with IMU"
+#elif defined(CONFIG_EZ_CAM_UART_RADAR)
+#define EZ_CAM_MODEL "EZ-CAM01 Radar"
+#define EZ_CAM_TYPE "HaLow IWRL6432 radar with IMU"
+#elif defined(CONFIG_EZ_CAM_UART_GPS)
+#define EZ_CAM_MODEL "EZ-CAM01 GPS"
+#define EZ_CAM_TYPE "HaLow L76K GPS with IMU"
+#else
+#define EZ_CAM_MODEL "EZ-CAM01"
+#define EZ_CAM_TYPE "HaLow camera with IMU"
+#endif
 #include "halow_sensors.h"
 #include "sensors_hw.h"
 #include "device_platform.h"
@@ -85,7 +98,7 @@ static uint8_t read_device(lwm2m_context_t *ctx, uint16_t instance, int *count,
 		lwm2m_data_t *r = &(*data)[i];
 		switch (r->id) {
 		case 0: lwm2m_data_encode_string("EdgeZ.ai", r); break;
-		case 1: lwm2m_data_encode_string("EZ-CAM01", r); break;
+		case 1: lwm2m_data_encode_string(EZ_CAM_MODEL, r); break;
 		case 2: lwm2m_data_encode_string(board_device_serial(), r); break;
 		case 3: lwm2m_data_encode_string(EZ_CAM_APP_REV, r); break;
 		case 6: if (multi_integer(r, 1)) return COAP_500_INTERNAL_SERVER_ERROR; break;
@@ -97,7 +110,7 @@ static uint8_t read_device(lwm2m_context_t *ctx, uint16_t instance, int *count,
 		case 14: lwm2m_data_encode_string(utc_offset, r); break;
 		case 15: lwm2m_data_encode_string(device_timezone, r); break;
 		case 16: lwm2m_data_encode_string("U", r); break;
-		case 17: lwm2m_data_encode_string("HaLow camera with IMU", r); break;
+		case 17: lwm2m_data_encode_string(EZ_CAM_TYPE, r); break;
 		case 18: lwm2m_data_encode_string("nRF54L15/MM8108 carrier", r); break;
 		case 19: lwm2m_data_encode_string(board_device_software(), r); break;
 		case 20: lwm2m_data_encode_int(6, r); break; /* charger/status sensing absent */

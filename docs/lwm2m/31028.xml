@@ -1,0 +1,86 @@
+<?xml version='1.0' encoding='utf-8'?>
+<LWM2M xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://openmobilealliance.org/tech/profiles/LWM2M.xsd">
+  <Object ObjectType="MODefinition">
+    <Name>EdgeZ GPS Acquisition</Name>
+    <Description1>On-demand L76K acquisition. Power and UART stop after a fix, timeout, error or WNM/context cancellation. Location object 6 holds the last valid fix.</Description1>
+    <ObjectID>31028</ObjectID>
+    <ObjectURN>urn:oma:lwm2m:x:31028</ObjectURN>
+    <LWM2MVersion>1.1</LWM2MVersion>
+    <ObjectVersion>1.0</ObjectVersion>
+    <MultipleInstances>Single</MultipleInstances>
+    <Mandatory>Optional</Mandatory>
+    <Resources>
+      <Item ID="0">
+        <Name>Acquire Fix</Name>
+        <Operations>E</Operations>
+        <MultipleInstances>Single</MultipleInstances>
+        <Mandatory>Mandatory</Mandatory>
+        <Type />
+        <RangeEnumeration />
+        <Units />
+        <Description>Request a single GPS fix without blocking the Execute response.</Description>
+      </Item>
+      <Item ID="1">
+        <Name>Acquisition Timeout</Name>
+        <Operations>RW</Operations>
+        <MultipleInstances>Single</MultipleInstances>
+        <Mandatory>Mandatory</Mandatory>
+        <Type>Integer</Type>
+        <RangeEnumeration>10..600</RangeEnumeration>
+        <Units>s</Units>
+        <Description>Maximum acquisition time, default 120 seconds. Writes while acquiring are rejected.</Description>
+      </Item>
+      <Item ID="2">
+        <Name>Acquisition State</Name>
+        <Operations>R</Operations>
+        <MultipleInstances>Single</MultipleInstances>
+        <Mandatory>Mandatory</Mandatory>
+        <Type>Integer</Type>
+        <RangeEnumeration>0..5</RangeEnumeration>
+        <Units />
+        <Description>0 idle, 1 acquiring, 2 fixed, 3 timed out, 4 error, 5 cancelled.</Description>
+      </Item>
+      <Item ID="3">
+        <Name>Last Result</Name>
+        <Operations>R</Operations>
+        <MultipleInstances>Single</MultipleInstances>
+        <Mandatory>Mandatory</Mandatory>
+        <Type>Integer</Type>
+        <RangeEnumeration />
+        <Units />
+        <Description>0 success or a negative platform errno.</Description>
+      </Item>
+      <Item ID="4">
+        <Name>Fix Age</Name>
+        <Operations>R</Operations>
+        <MultipleInstances>Single</MultipleInstances>
+        <Mandatory>Mandatory</Mandatory>
+        <Type>Integer</Type>
+        <RangeEnumeration />
+        <Units>s</Units>
+        <Description>Age of cached fix; -1 before the first valid fix. Read does not start GPS.</Description>
+      </Item>
+      <Item ID="5">
+        <Name>Successful Fixes</Name>
+        <Operations>R</Operations>
+        <MultipleInstances>Single</MultipleInstances>
+        <Mandatory>Mandatory</Mandatory>
+        <Type>Integer</Type>
+        <RangeEnumeration />
+        <Units />
+        <Description>Successful acquisition count since boot.</Description>
+      </Item>
+      <Item ID="6">
+        <Name>Has Cached Fix</Name>
+        <Operations>R</Operations>
+        <MultipleInstances>Single</MultipleInstances>
+        <Mandatory>Mandatory</Mandatory>
+        <Type>Boolean</Type>
+        <RangeEnumeration />
+        <Units />
+        <Description>Whether a cached checksum-valid active RMC fix exists. Cached data survives later acquisition failures until reboot.</Description>
+      </Item>
+    </Resources>
+    <Description2>31028 is an EdgeZ vendor object identifier, not an OMA-registered standard object.</Description2>
+  </Object>
+</LWM2M>

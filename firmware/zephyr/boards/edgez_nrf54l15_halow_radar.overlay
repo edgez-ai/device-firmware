@@ -1,0 +1,2 @@
+#include "edgez_nrf54l15_halow_light_radar.overlay"
+/* Autostart IWRL6432: existing carrier TX=P1.11, RX=P1.12, EN=P1.09. */

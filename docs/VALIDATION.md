@@ -522,3 +522,47 @@ timing, and the ARM Zephyr idle path using WFI. Status logging and the optional
 not measured CPU sleep residency or proof that all clocks/peripherals are idle.
 System OFF on nRF54L15 supports a GRTC wake but resets the MCU; it cannot simply
 resume the existing Zephyr/Wakaama/SDK contexts after the timed WNM interval.
+
+## Base, camera, radar and on-demand GPS variants — 2026-11-24
+
+Added four explicit UART-device build environments while retaining the legacy
+camera profiles and default. All four include BLE provisioning, factory data,
+Device/IMU objects, the HaLow UDP client, connection watchdog and timed radio
+WNM. UART selection is mutually exclusive; GPS acquisition is on request and
+powers the receiver off after a fix, timeout, error or cancellation. See
+[VARIANTS.md](VARIANTS.md) for wiring and resource paths.
+
+All four environments built successfully using the pinned local dependencies:
+
+| Environment | Flash bytes | Static RAM bytes |
+| --- | ---: | ---: |
+| ez-cam01-base | 977760 | 183906 |
+| ez-cam01-camera | 975744 | 250643 |
+| ez-cam01-radar | 983288 | 190565 |
+| ez-cam01-gps | 982620 | 184829 |
+
+Generated configurations and ELF symbols confirm one selected UART device,
+camera object only in camera, radar presence/distance only in radar, and GPS
+objects only in GPS. Base disables SERIAL and has no UART driver symbols.
+Radar selects asynchronous UART; camera and GPS use interrupt-driven UART.
+All four disable LOG, CONSOLE and USE_SEGGER_RTT, and no RTT backend/buffer
+symbols are linked. WNM signal-pin parking remains off by default and its
+devicetree passive-pin list is now shared across the carrier variants.
+
+All 23 native tests passed, including the actual GPS NMEA parser and LwM2M
+object under ASan/UBSan. GPS tests cover checksum/status/date/coordinate
+validation, cached reads without acquisition, timeouts, failed startup/read,
+and WNM/context cancellation. Separate tests compile the actual GPS UART
+boundary with fake driver APIs to verify deferred initialization, ISR-to-work
+handoff, supply-before-UART startup, pin parking and power-off after driver
+initialization, callback or resume failure. The GPS control XML and local
+documentation links also passed parsing/link checks.
+
+The variant matrix is build/host-test validation. No variant image was flashed
+for this change, and no new GPS/radar hardware or power result is claimed.
+Radar requires compatible autostart TLV 1101 firmware and remains powered
+during radio-only WNM. The GPS server model is supplied as
+`docs/lwm2m/31028.xml`; server installation is a separate step.
+
+HEX/ELF files, per-variant hashes/configuration checks and build/test logs are
+saved locally in ignored `artifacts/ez-cam01-variants/`.
