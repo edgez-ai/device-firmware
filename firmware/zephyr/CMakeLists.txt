@@ -216,6 +216,11 @@ if(CONFIG_EZ_DEV54_BLE_PROV)
     "${RADAR_NRF54_DIR}/src/factory_data.c")
 endif()
 
+if(CONFIG_EZ_DEV54_PROV_MOTION_SLEEP)
+  target_sources(app PRIVATE "${RADAR_NRF54_DIR}/src/prov_motion.c"
+    "${RADAR_NRF54_DIR}/src/prov_power.c")
+endif()
+
 if(CONFIG_EZ_DEV54_UART_GPS)
   target_sources(app PRIVATE "${RADAR_NRF54_DIR}/src/halow_gps.c"
     "${RADAR_NRF54_DIR}/src/gps_hw.c" "${RADAR_NRF54_DIR}/src/gps_nmea.c")

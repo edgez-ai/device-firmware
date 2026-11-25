@@ -15,7 +15,7 @@ endpoints are not part of this profile.
 3. Otherwise use credentials saved by BLE provisioning in Zephyr Settings.
    nRF54 RRAM uses ZMS as the persistent backend (the equivalent of the ESP32
    NVS role); it does not use erase-dependent NVS.
-4. With no credentials, advertise for 120 seconds. BLE stops completely after
+4. With no credentials, advertise for 180 seconds. BLE stops completely after
    the window expires, or five seconds after a successful status response.
    Normal boots with saved credentials do not start Bluetooth.
 
@@ -41,6 +41,40 @@ Hold for five seconds to delete the saved BLE network and reboot. Factory
 identity, country and factory Wi-Fi are retained. With factory Wi-Fi present,
 reset therefore reconnects to that factory profile. Release a button held
 across reboot before another reset can be triggered.
+
+## Battery provisioning timeout and motion wake
+
+With `CONFIG_EZ_DEV54_PROV_MOTION_SLEEP=y` (default with BLE and sensors), an
+unfinished three-minute provisioning window disconnects BLE, disables Bluetooth,
+arms the LSM6DS3TR-C wake interrupt on P0.02 and enters nRF54 System OFF. HaLow
+power and external UART-device power are switched off; their signal pins are
+parked to avoid back-powering. The active-low indicator is turned off. The IMU
+accelerometer stays in 26 Hz low-power mode with the gyroscope off; the IMU's
+fixed 3.3 V supply is intentionally retained. This is separate from connected
+WNM sleep and does not erase factory data or saved credentials.
+
+After an IMU System OFF wake, Bluetooth stays off while fresh acceleration
+samples are checked for at most three seconds. Acceptance requires three
+distinct strong excursions, with no more than 800 ms between them, involving
+at least two of X/Y/Z across the gesture. A gravity estimate is subtracted;
+static gravity, slow tilts, one impact or repeated movement on one axis do not
+qualify. The default dynamic threshold is 2000 mg (2 g), adjustable with
+`CONFIG_EZ_DEV54_PROV_SHAKE_THRESHOLD_MG`. The sensor uses +/-8 g during this
+check and restores the normal on-demand measurement scale afterward.
+
+The hardware interrupt is only a candidate (1 g slope-filter threshold): it
+wakes the MCU, not BLE. If the three-second test fails, the IMU is rearmed and
+the MCU returns to System OFF. If it passes, a new 180-second BLE provisioning
+window opens. Failed/unsaved Wi-Fi attempts also expire. Successful saved or
+factory-provisioned devices retain normal operation and never enter this
+unprovisioned timeout path. Power-on/reset can still open initial provisioning;
+the shake gate applies to System OFF wakes.
+
+If arming the IMU fails, the firmware keeps BLE off and retries after 30 seconds
+rather than entering a sleep state with no usable wake source. Runtime logging
+remains disabled. `prov_power_error` is a passive SWD diagnostic. Physical shake
+sensitivity and sleep current must be measured on the board with the debugger
+disconnected; native tests cannot establish the real power floor.
 
 ## Factory records and flashing
 

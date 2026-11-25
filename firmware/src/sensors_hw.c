@@ -3,6 +3,8 @@
  * IMU VDD/VDDIO are wired to 3.3 V: ODR=0 is power-down, not a rail cut.
  */
 #include "sensors_hw.h"
+#include "prov_motion.h"
+#include <hal/nrf_gpio.h>
 #include <errno.h>
 #include <zephyr/device.h>
 #include <zephyr/drivers/adc.h>
@@ -72,6 +74,9 @@ static int configure_imu(void)
 	if (!rc) rc = write_reg(0x0d, 0); /* INT1 off */
 	if (!rc) rc = write_reg(0x0e, 0); /* INT2 off */
 	if (!rc) rc = write_reg(0x19, 0); /* embedded functions off */
+	if (!rc) rc = write_reg(0x58, 0); /* disable latched motion wake */
+	if (!rc) rc = write_reg(0x5e, 0); /* MD1_CFG */
+	if (!rc) rc = write_reg(0x5f, 0); /* MD2_CFG */
 	if (!rc) rc = write_reg(0x15, 0x10); /* accel low-power mode */
 	if (!rc) rc = write_reg(0x16, 0x80); /* gyro low-power mode */
 	int off = set_odr(0);
@@ -193,3 +198,68 @@ int board_voltage_read(double *volts)
 	last_voltage_error = rc;
 	return rc;
 }
+
+#if defined(CONFIG_EZ_DEV54_PROV_MOTION_SLEEP)
+int board_prov_motion_verify(void)
+{
+    if (observed_mask) return -EBUSY;
+    int rc = bus_start();
+    if (!rc) rc = configure_imu();
+    /* 104 Hz, +/-8 g, low-power accelerometer; gyro remains off. */
+    if (!rc) rc = write_reg(0x10, 0x4c);
+    uint8_t raw[6], ready;
+    struct prov_motion motion = {0};
+    bool accepted = false;
+    int64_t deadline = k_uptime_get() + PROV_MOTION_WINDOW_MS;
+    while (!rc && k_uptime_get() < deadline) {
+        rc = i2c_reg_read_byte_dt(&imu, 0x1e, &ready);
+        if (rc) break;
+        if (ready & 1) {
+            rc = i2c_burst_read_dt(&imu, 0x28, raw, sizeof(raw));
+            if (rc) break;
+            int32_t mg[3];
+            for (unsigned i = 0; i < 3; ++i)
+                mg[i] = (int16_t)sys_get_le16(&raw[i*2]) * 244 / 1000;
+            accepted = prov_motion_sample(&motion, k_uptime_get_32(), mg,
+                                          CONFIG_EZ_DEV54_PROV_SHAKE_THRESHOLD_MG);
+            if (accepted) break;
+        }
+        k_msleep(2);
+    }
+    /* Restore the normal on-demand scale and parked I2C before enabling BLE. */
+    int restore = configure_imu();
+    int stop = bus_stop();
+    last_imu_error = rc ? rc : restore ? restore : stop;
+    return last_imu_error ? last_imu_error : accepted ? 1 : 0;
+}
+int board_prov_motion_arm(void)
+{
+    if (observed_mask) return -EBUSY;
+    int rc = bus_start();
+    if (!rc) rc = configure_imu();
+    /* AN5130: low-power 26 Hz / +/-8 g, slope-filter wake at 1 g.
+     * This is only a candidate interrupt. Software requires >=2 g on >=2
+     * axes and repeated excursions before Bluetooth can start. */
+    if (!rc) rc = write_reg(0x58, 0x81); /* LIR + INTERRUPTS_ENABLE, slope */
+    if (!rc) rc = write_reg(0x5b, 8);    /* 8 * (8 g / 64) = 1 g */
+    if (!rc) rc = write_reg(0x5c, 0);    /* one wake sample */
+    if (!rc) rc = write_reg(0x10, 0x2c); /* 26 Hz, +/-8 g */
+    if (!rc) k_msleep(160);             /* settle slope filter before routing */
+    uint8_t source;
+    if (!rc) rc = i2c_reg_read_byte_dt(&imu, 0x1b, &source);
+    if (!rc) rc = write_reg(0x5e, 0x20); /* wake-up on INT1 */
+    if (rc) (void)set_odr(0);
+    int stop = bus_stop();
+    if (!rc) rc = gpio_pin_configure_dt(&imu_irq, GPIO_INPUT);
+    last_imu_error = rc ? rc : stop;
+    return last_imu_error;
+}
+void board_prov_motion_sense(void)
+{
+    /* Called with interrupts locked immediately before System OFF. No GPIOTE
+     * channel or callback is needed: retained GPIO SENSE is the wake source. */
+    uint32_t pin = NRF_GPIO_PIN_MAP(DT_PROP(DT_GPIO_CTLR(DT_ALIAS(imu0), irq_gpios), port),
+                                    DT_GPIO_PIN(DT_ALIAS(imu0), irq_gpios));
+    nrf_gpio_cfg_sense_set(pin, NRF_GPIO_PIN_SENSE_HIGH);
+}
+#endif

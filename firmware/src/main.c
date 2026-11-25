@@ -21,6 +21,10 @@ int main(void)
 	if (hardware_uart_prepare()) return -1;
 	int memory_rc = hardware_memory_init();
 	if (memory_rc) LOG_ERR("Peripheral memory allocation failed: %d", memory_rc);
+#if defined(CONFIG_EZ_DEV54_SENSORS)
+	int sensors_rc = board_sensors_init();
+	if (sensors_rc) LOG_WRN("Sensor standby initialization: %d", sensors_rc);
+#endif
 #if defined(CONFIG_EZ_DEV54_BLE_PROV)
 	int prov_rc = ez_prov_init();
 	if (prov_rc) LOG_ERR("Provisioning init failed: %d", prov_rc);
@@ -30,10 +34,6 @@ int main(void)
 	if (rc != 0) {
 		LOG_ERR("radar start failed: %d", rc);
 	}
-#if defined(CONFIG_EZ_DEV54_SENSORS)
-	int sensors_rc = board_sensors_init();
-	if (sensors_rc) LOG_WRN("Sensor standby initialization: %d", sensors_rc);
-#endif
 	(void)halow_sta_start();
 	(void)radar_mqtt_start();
 	if (CONFIG_RADAR_STATUS_LOG_SECONDS == 0) {

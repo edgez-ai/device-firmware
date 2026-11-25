@@ -84,7 +84,19 @@ config EZ_DEV54_PROV_WINDOW_SECONDS
 	int "Provisioning window, seconds"
 	depends on EZ_DEV54_BLE_PROV
 	range 30 600
-	default 120
+	default 180
+
+config EZ_DEV54_PROV_MOTION_SLEEP
+	bool "System OFF after uncompleted provisioning; IMU shake to reopen BLE"
+	depends on EZ_DEV54_BLE_PROV && EZ_DEV54_SENSORS
+	select POWEROFF
+	default y
+
+config EZ_DEV54_PROV_SHAKE_THRESHOLD_MG
+	int "Dynamic acceleration threshold for provisioning shake, mg"
+	depends on EZ_DEV54_PROV_MOTION_SLEEP
+	range 1000 4000
+	default 2000
 
 config EZ_DEV54_PROV_SUCCESS_GRACE_SECONDS
 	int "BLE shutdown grace after successful status read"

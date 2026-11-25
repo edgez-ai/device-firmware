@@ -1,0 +1,50 @@
+name: Build EZ-DEV54 firmware
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, 'codex/provisioning-motion-sleep']
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  motion:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test the three-second shake gate with sanitizers
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined \
+            -Ifirmware/src firmware/src/prov_motion.c tests/native/prov_motion.c -o /tmp/prov-motion
+          /tmp/prov-motion
+  firmware:
+    needs: motion
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install PlatformIO
+        run: python -m pip install platformio==6.1.18
+      - uses: actions/cache@v4
+        with:
+          path: ~/.platformio
+          key: ez-dev54-linux-${{ hashFiles('firmware/platformio.ini', 'firmware/scripts/pre_build_nrf54.py') }}
+      - name: Build unified firmware
+        working-directory: firmware
+        run: pio run -e ez-dev54
+      - name: Package CI firmware
+        run: |
+          mkdir -p artifacts
+          cp firmware/.pio/build/ez-dev54/firmware.hex artifacts/
+          cp firmware/.pio/build/ez-dev54/firmware.elf artifacts/
+          cp firmware/.pio/build/ez-dev54/zephyr/.config artifacts/zephyr.config
+          cd artifacts
+          sha256sum firmware.hex firmware.elf zephyr.config > SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ez-dev54-${{ github.sha }}
+          path: artifacts/

@@ -6,6 +6,9 @@
 #include "prov_protocol.h"
 #include "halow_sta.h"
 #include "factory_data.h"
+#if defined(CONFIG_EZ_DEV54_PROV_MOTION_SLEEP)
+#include "prov_power.h"
+#endif
 #include <errno.h>
 #include <string.h>
 #include <psa/crypto.h>
@@ -52,6 +55,7 @@ static struct bt_conn *connection_ref(void)
 }
 static bool bt_started;
 static atomic_t window_open;
+static atomic_t closing_window;
 static atomic_t button_pressed;
 static atomic_t reset_armed;
 static uint8_t rx[PROV_PACKET_MAX], tx[PROV_PACKET_MAX];
@@ -175,7 +179,7 @@ bool ez_prov_get_credentials(char ssid[33], char password[64])
 bool ez_prov_retry_allowed(void)
 {
 	k_mutex_lock(&config_lock, K_FOREVER);
-	bool allow = !atomic_get(&window_open) || committed;
+	bool allow = !atomic_get(&closing_window) && (!atomic_get(&window_open) || committed);
 	k_mutex_unlock(&config_lock);
 	return allow;
 }
@@ -200,7 +204,7 @@ static int apply_network(void *user)
 {
 	ARG_UNUSED(user);
 	k_mutex_lock(&config_lock, K_FOREVER);
-	if (!have_staged) { k_mutex_unlock(&config_lock); return -EINVAL; }
+	if (!have_staged || atomic_get(&closing_window)) { k_mutex_unlock(&config_lock); return -EINVAL; }
 	active = staged; have_active = true; committed = false;
 	config_generation++; wifi_state = 1;
 	wipe(&staged, sizeof(staged)); have_staged = false;
@@ -218,7 +222,7 @@ static void get_status(void *user, struct prov_status *status)
 	status->ap.auth = active.password_len ? 6 : 0;
 	bool success = wifi_state == 0 && committed;
 	k_mutex_unlock(&config_lock);
-	if (success) (void)k_work_reschedule(&stop_work, K_SECONDS(CONFIG_EZ_DEV54_PROV_SUCCESS_GRACE_SECONDS));
+	if (success && !atomic_get(&closing_window)) (void)k_work_reschedule(&stop_work, K_SECONDS(CONFIG_EZ_DEV54_PROV_SUCCESS_GRACE_SECONDS));
 }
 void ez_prov_wifi_failed(int status)
 {
@@ -408,7 +412,7 @@ static void advertise(struct k_work *work)
 static void begin_window(struct k_work *work)
 {
 	ARG_UNUSED(work);
-	if (bt_started) return;
+	if (bt_started || atomic_get(&closing_window)) return;
 	int rc = bt_enable(NULL);
 	if (rc) { last_error = rc; return; }
 	bt_started = true; atomic_set(&window_open, 1);
@@ -418,9 +422,9 @@ static void begin_window(struct k_work *work)
 }
 static void stop_window(struct k_work *work)
 {
-	ARG_UNUSED(work); atomic_clear(&window_open);
+	ARG_UNUSED(work); atomic_set(&closing_window, 1); atomic_clear(&window_open);
 	(void)k_work_cancel_delayable(&advertise_work);
-	if (!bt_started) return;
+	if (bt_started) {
 	(void)bt_le_adv_stop();
 	struct bt_conn *c = connection_ref();
 	if (c) {
@@ -430,6 +434,20 @@ static void stop_window(struct k_work *work)
 	}
 	int rc = bt_disable(); last_error = rc;
 	if (!rc) bt_started = false;
+	else { (void)k_work_reschedule(&stop_work, K_MSEC(100)); return; }
+	}
+#if defined(CONFIG_EZ_DEV54_PROV_MOTION_SLEEP)
+	k_mutex_lock(&config_lock, K_FOREVER);
+	bool needs_provisioning = !committed;
+	k_mutex_unlock(&config_lock);
+	if (needs_provisioning) {
+		last_error = prov_power_sleep();
+		/* Failed IMU preparation: keep BLE off and retry without busy-looping. */
+		(void)k_work_reschedule(&stop_work, K_SECONDS(30));
+		return;
+	}
+#endif
+	atomic_clear(&closing_window);
 }
 int ez_prov_forget_network(void)
 {
@@ -480,7 +498,17 @@ int ez_prov_init(void)
 	if (psa_crypto_init() != PSA_SUCCESS || ez_factory_crypto_init()) return -EIO;
 	net_mgmt_init_event_callback(&scan_cb, scan_event, NET_EVENT_WIFI_SCAN_RESULT | NET_EVENT_WIFI_SCAN_DONE);
 	net_mgmt_add_event_callback(&scan_cb);
-	if (!have_active) (void)k_work_submit(&start_work);
+	if (!have_active) {
+#if defined(CONFIG_EZ_DEV54_PROV_MOTION_SLEEP)
+		rc = prov_power_boot_check();
+		if (rc) {
+			atomic_set(&closing_window, 1);
+			(void)k_work_reschedule(&stop_work, K_SECONDS(30));
+			return rc;
+		}
+#endif
+		(void)k_work_submit(&start_work);
+	}
 	return 0;
 }
 #endif
