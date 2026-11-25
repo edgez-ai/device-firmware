@@ -1,46 +1,40 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #include "prov_motion.h"
 #include <stdlib.h>
-
+#include <string.h>
+void prov_motion_init(struct prov_motion *s, const int32_t reference[3],
+                      uint32_t now) {
+  memset(s, 0, sizeof(*s));
+  memcpy(s->reference_mg, reference, sizeof(s->reference_mg));
+  memcpy(s->previous_mg, reference, sizeof(s->previous_mg));
+  s->start_ms = now;
+  s->initialized = true;
+}
 bool prov_motion_sample(struct prov_motion *s, uint32_t now,
                         const int32_t mg[3], int32_t threshold) {
-  if (!s->initialized) {
-    for (unsigned i = 0; i < 3; ++i)
-      s->gravity_q8[i] = mg[i] * 256;
-    s->initialized = true;
-    s->start_ms = now;
+  if (!s->initialized || now - s->start_ms >= PROV_MOTION_WINDOW_MS)
     return false;
-  }
-  if (now - s->start_ms >= PROV_MOTION_WINDOW_MS)
-    return false;
-  if (s->peaks && now - s->last_peak_ms > 800U) {
-    s->peaks = s->axes = 0;
-  }
+  int64_t magnitude2 = 0;
   unsigned axes = 0;
-  bool released = true;
+  bool quiet = true;
   for (unsigned i = 0; i < 3; ++i) {
-    /* Track gravity slowly; do not mistake a stationary 1 g axis for shaking.
-     */
-    s->gravity_q8[i] += (mg[i] * 256 - s->gravity_q8[i]) / 16;
-    int32_t delta = abs(mg[i] - s->gravity_q8[i] / 256);
-    if (delta >= threshold)
-      axes |= 1U << i;
-    if (delta > threshold / 2)
-      released = false;
+    magnitude2 += (int64_t)mg[i] * mg[i];
+    if (abs(mg[i] - s->reference_mg[i]) >= threshold)
+      ++axes;
+    if (abs(mg[i] - s->previous_mg[i]) > 100)
+      quiet = false;
+    s->previous_mg[i] = mg[i];
   }
-  if (released)
-    s->high = false;
-  if (axes && !s->high) {
-    if (!s->peaks || now - s->last_peak_ms >= 80U) {
-      s->last_peak_ms = now;
-      s->peaks++;
-      s->axes |= axes;
-    }
-    s->high = true;
+  /* Reject free fall/transient acceleration. A three-axis accelerometer alone
+   * cannot distinguish every sustained linear acceleration from gravity. */
+  if (axes < 2 || !quiet || magnitude2 < 850LL * 850 ||
+      magnitude2 > 1150LL * 1150) {
+    s->stable = false;
+    return false;
   }
-  if (axes && s->peaks)
-    s->axes |=
-        axes; /* Axes may peak at different instants within an excursion. */
-  /* Three distinct strong excursions, with at least two axes represented. */
-  return s->peaks >= 3 && (s->axes & (s->axes - 1U)) != 0;
+  if (!s->stable) {
+    s->stable = true;
+    s->stable_since_ms = now;
+  }
+  return now - s->stable_since_ms >= 300U;
 }

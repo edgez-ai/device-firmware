@@ -79,14 +79,21 @@ int ez_factory_hardware(void)
 	uint8_t mode;
 	return ez_factory_hardware_parse((const uint8_t *)address, EZ_FACTORY_PAGE_SIZE, &mode) == 0 ? mode : -1;
 }
-uint16_t ez_factory_shake_threshold_mg(void)
+uint16_t ez_factory_pose_delta_mg(void)
 {
-    uint16_t threshold = EZ_FACTORY_SHAKE_DEFAULT_MG;
+    uint16_t threshold = EZ_FACTORY_POSE_DEFAULT_MG;
     if (ez_factory_init()) return threshold;
     uintptr_t address = DT_REG_ADDR(DT_NODELABEL(cpuapp_rram)) + EZ_FACTORY_ADDRESS;
-    uint16_t saved;
-    if (!ez_factory_motion_parse((const uint8_t *)address, EZ_FACTORY_PAGE_SIZE, &saved))
+    uint16_t saved; uint8_t angle;
+    if (!ez_factory_motion_parse((const uint8_t *)address, EZ_FACTORY_PAGE_SIZE, &saved, &angle))
         threshold = saved;
     return threshold;
+}
+uint8_t ez_factory_pose_angle_deg(void)
+{
+    if (ez_factory_init()) return 60;
+    uintptr_t address = DT_REG_ADDR(DT_NODELABEL(cpuapp_rram)) + EZ_FACTORY_ADDRESS;
+    uint16_t mg; uint8_t angle;
+    return ez_factory_motion_parse((const uint8_t *)address, EZ_FACTORY_PAGE_SIZE, &mg, &angle) ? 60 : angle;
 }
 #endif

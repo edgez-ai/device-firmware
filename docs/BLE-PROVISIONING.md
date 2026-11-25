@@ -42,56 +42,60 @@ identity, country and factory Wi-Fi are retained. With factory Wi-Fi present,
 reset therefore reconnects to that factory profile. Release a button held
 across reboot before another reset can be triggered.
 
-## Battery provisioning timeout and motion wake
+## Battery provisioning timeout and posture wake
 
 With `CONFIG_EZ_DEV54_PROV_MOTION_SLEEP=y` (default with BLE and sensors), an
-unfinished three-minute provisioning window disconnects BLE, disables Bluetooth,
-arms the LSM6DS3TR-C wake interrupt on P0.02 and enters nRF54 System OFF. HaLow
-power and external UART-device power are switched off; their signal pins are
-parked to avoid back-powering. The active-low indicator is turned off. The IMU
-accelerometer stays in 26 Hz low-power mode with the gyroscope off; the IMU's
-fixed 3.3 V supply is intentionally retained. This is separate from connected
-WNM sleep and does not erase factory data or saved credentials.
+unfinished 180-second provisioning window disables Bluetooth and enters nRF54
+System OFF. HaLow and external UART-device power are switched off and their
+signal pins are parked. The indicator is off. The accelerometer remains in
+26 Hz low-power mode; the gyroscope is off. Connected WNM sleep is unchanged.
 
-After an IMU System OFF wake, Bluetooth stays off while fresh acceleration
-samples are checked for at most three seconds. Acceptance requires three
-distinct strong excursions, with no more than 800 ms between them, involving
-at least two of X/Y/Z across the gesture. A gravity estimate is subtracted;
-static gravity, slow tilts, one impact or repeated movement on one axis do not
-qualify. The default dynamic threshold is 1000 mg (1 g, approximately 9.81 m/s²),
-overridable in factory data. The optional 16-byte CRC-protected `EZPM` extension
-at factory-page offset 272 stores `shake_threshold_mg` (500–4000 mg). Each
-motion-wake verification reads and validates it anew; absent/invalid data uses
-1000 mg. No threshold is copied to NVS and no flash write occurs during wake.
-The original 211-byte identity record, PoP and hardware extension are unchanged. The sensor uses +/-8 g during this
-check and restores the normal on-demand measurement scale afterward.
+The LSM6DS3TR-C **6D orientation-change interrupt** on P0.02 is the wake source.
+This does not use its high-pass/slope activity detector and does not require
+shaking. Hardware recognizes transitions among six gravity-based orientations;
+it does not detect every arbitrary small rotation. The hardware angle threshold
+is 60 degrees by default, selectable from 50/60/70/80 degrees. This hardware
+classification angle is different from the software gravity-component delta.
+Yaw rotation about gravity cannot be detected reliably with an accelerometer.
 
-The hardware interrupt is only a candidate (half the selected threshold,
-rounded up to 125 mg steps; 0.5 g with the default 1 g setting): it
-wakes the MCU, not BLE. If the three-second test fails, the IMU is rearmed and
-the MCU returns to System OFF. If it passes, a new 180-second BLE provisioning
-window opens. Failed/unsaved Wi-Fi attempts also expire. Successful saved or
-factory-provisioned devices retain normal operation and never enter this
-unprovisioned timeout path. Power-on/reset can still open initial provisioning;
-the shake gate applies to System OFF wakes.
+Before entering System OFF, the firmware captures a quiet gravity vector and
+stores it with a CRC in a reserved 4 KiB retained SRAM bank. There are no NVS or
+flash writes. Invalid verification wakes retain that reference rather than
+continually shifting it. A new provisioning window or a power-on/reset permits
+a new reference. The retention bank adds a power cost that must be measured;
+this change does not claim a measured sleep-current reduction.
 
-If arming the IMU fails, the firmware keeps BLE off and retries after 30 seconds
-rather than entering a sleep state with no usable wake source. Runtime logging
-remains disabled. `prov_power_error` is a passive SWD diagnostic. Physical shake
-sensitivity and sleep current must be measured on the board with the debugger
-disconnected; native tests cannot establish the real power floor.
+On wake, BLE stays off during a verification window of at most three seconds.
+At least **two axes simultaneously** must differ from the pre-sleep reference by
+at least **500 mg (0.5 g, approximately 4.90 m/s²)**, and the new near-1 g pose
+must be stable for 300 ms. Gravity is the desired signal here and is not
+subtracted. A single-axis change, transient impact or free fall fails. Strong
+linear acceleration is filtered by magnitude/stability checks, but three-axis
+acceleration alone cannot distinguish every sustained acceleration from tilt.
+Success opens a new 180-second BLE window; otherwise the device rearms the
+orientation interrupt and sleeps again. Saved/factory-provisioned devices
+continue normal operation. An IMU/retention error keeps BLE off and retries
+preparation after 30 seconds instead of sleeping without a usable wake source.
 
-Example: update a backed-up factory page while preserving its identity and
-other fields (the output file must be new):
+The CRC-protected `EZPM` version-2 extension at factory-page offset 272 stores
+`pose_delta_mg` (100–1000 mg) and `pose_interrupt_deg` (50/60/70/80). Each wake
+reads the factory values anew. Missing, legacy or corrupt extensions use
+500 mg / 60 degrees. The original 211-byte identity record, PoP and hardware
+extension remain unchanged. The earlier experimental shake extension is not
+interpreted as a posture setting.
+
+Example (creates a new private image; programming is a separate operation):
 
 ```bash
 python3 firmware/scripts/factory_data.py update \
-  --input /private/path/factory-before.bin --shake-threshold-mg 1000 \
+  --input /private/path/factory-before.bin \
+  --pose-delta-mg 500 --pose-interrupt-deg 60 \
   --output /private/path/factory-updated.bin
 ```
 
-Use `--clear-shake-threshold` to restore the default. This command creates an
-image; device programming remains an explicit separate `flash` operation.
+`--clear-pose-threshold` restores both defaults. Runtime logs remain disabled;
+`prov_power_error` is a passive SWD diagnostic. Physical tilt sensitivity, SRAM
+retention and sleep current need board testing with the debugger disconnected.
 
 ## Factory records and flashing
 

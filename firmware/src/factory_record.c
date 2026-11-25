@@ -68,21 +68,22 @@ int ez_factory_parse(const uint8_t *p, size_t size, struct ez_factory_data *d) {
 /* Optional EZPM extension; leave the tracker-compatible identity record intact.
  */
 int ez_factory_motion_parse(const uint8_t *page, size_t size,
-                            uint16_t *threshold) {
-  if (!page || !threshold)
+                            uint16_t *threshold, uint8_t *angle) {
+  if (!page || !threshold || !angle)
     return -EINVAL;
   if (size < EZ_FACTORY_MOTION_OFFSET + EZ_FACTORY_MOTION_SIZE)
     return -ENOENT;
   const uint8_t *p = page + EZ_FACTORY_MOTION_OFFSET;
   if (le32(p) == UINT32_MAX || le32(p) == 0)
     return -ENOENT;
-  if (le32(p) != 0x4d505a45U || le16(p + 4) != 1 || le16(p + 6) != 16 ||
+  if (le32(p) != 0x4d505a45U || le16(p + 4) != 2 || le16(p + 6) != 16 ||
       le32(p + 12) != crc32(p, 12))
     return -EBADMSG;
   uint16_t mg = le16(p + 8);
-  if (mg < EZ_FACTORY_SHAKE_MIN_MG || mg > EZ_FACTORY_SHAKE_MAX_MG || p[10] ||
-      p[11])
+  if (mg < EZ_FACTORY_POSE_MIN_MG || mg > EZ_FACTORY_POSE_MAX_MG ||
+      (p[10] != 50 && p[10] != 60 && p[10] != 70 && p[10] != 80) || p[11])
     return -EINVAL;
   *threshold = mg;
+  *angle = p[10];
   return 0;
 }

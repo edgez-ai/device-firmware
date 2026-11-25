@@ -13,7 +13,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Test factory compatibility, CRC and threshold overrides
         run: python3 tests/test_factory_data.py
-      - name: Test the three-second shake gate with sanitizers
+      - name: Test the three-second posture gate with sanitizers
         run: |
           cc -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined \
             -Ifirmware/src firmware/src/prov_motion.c tests/native/prov_motion.c -o /tmp/prov-motion

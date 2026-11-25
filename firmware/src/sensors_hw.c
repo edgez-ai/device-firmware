@@ -6,7 +6,12 @@
 #include "prov_motion.h"
 #include "factory_data.h"
 #include <hal/nrf_gpio.h>
+#include <zephyr/drivers/retained_mem.h>
+#include <zephyr/sys/crc.h>
 #include <errno.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stddef.h>
 #include <zephyr/device.h>
 #include <zephyr/drivers/adc.h>
 #include <zephyr/drivers/gpio.h>
@@ -70,6 +75,7 @@ static int configure_imu(void)
 	int rc = write_reg(0x01, 0); /* main register bank */
 	if (!rc) rc = i2c_reg_read_byte_dt(&imu, 0x0f, &who);
 	if (!rc && who != 0x6a) rc = -ENODEV;
+	if (!rc) rc = write_reg(0x17, 0); /* reset optional posture filtering */
 	if (!rc) rc = write_reg(0x12, 0x44); /* BDU + register auto-increment */
 	if (!rc) rc = write_reg(0x0a, 0); /* FIFO bypass */
 	if (!rc) rc = write_reg(0x0d, 0); /* INT1 off */
@@ -200,62 +206,111 @@ int board_voltage_read(double *volts)
 	return rc;
 }
 
+
 #if defined(CONFIG_EZ_DEV54_PROV_MOTION_SLEEP)
+static const struct device *const reference_ram = DEVICE_DT_GET(DT_NODELABEL(prov_retained));
+struct pose_reference { uint32_t magic; int32_t mg[3]; uint32_t crc; };
+static bool reuse_reference;
+static int motion_sample(int32_t mg[3], int64_t deadline)
+{
+    uint8_t ready = 0, raw[6];
+    int rc;
+    do {
+        rc = i2c_reg_read_byte_dt(&imu, 0x1e, &ready);
+        if (rc) return rc;
+        if (k_uptime_get() >= deadline) return -ETIMEDOUT;
+        if (!(ready & 1)) k_msleep(2);
+    } while (!(ready & 1));
+    rc = i2c_burst_read_dt(&imu, 0x28, raw, sizeof(raw));
+    if (!rc) for (unsigned i = 0; i < 3; ++i)
+        mg[i] = (int16_t)sys_get_le16(raw + 2*i) * 61 / 1000; /* +/-2 g */
+    return rc;
+}
+static int motion_begin(void)
+{
+    int rc = bus_start();
+    if (!rc) rc = configure_imu();
+    if (!rc) rc = write_reg(0x17, 0x81); /* LPF2 output, LPF2 feeds 6D */
+    if (!rc) rc = write_reg(0x10, 0x20); /* 26 Hz, +/-2 g, gyro remains off */
+    uint8_t old[6];
+    if (!rc) rc = i2c_burst_read_dt(&imu, 0x28, old, sizeof(old));
+    return rc;
+}
 int board_prov_motion_verify(void)
 {
     if (observed_mask) return -EBUSY;
-    int rc = bus_start();
-    if (!rc) rc = configure_imu();
-    /* 104 Hz, +/-8 g, low-power accelerometer; gyro remains off. */
-    if (!rc) rc = write_reg(0x10, 0x4c);
-    uint8_t raw[6], ready;
-    /* Flush the retained sample from the previous ODR/full-scale before
-     * interpreting fresh +/-8 g values or establishing the gravity baseline. */
-    if (!rc) rc = i2c_burst_read_dt(&imu, 0x28, raw, sizeof(raw));
-    struct prov_motion motion = {0};
-    const uint16_t threshold_mg = ez_factory_shake_threshold_mg();
+    struct pose_reference reference;
+    if (!device_is_ready(reference_ram)) return -ENODEV;
+    int rc = retained_mem_read(reference_ram, 0, (uint8_t *)&reference, sizeof(reference));
+    if (rc || reference.magic != 0x455a5052 || reference.crc !=
+        crc32_ieee((const uint8_t *)&reference, offsetof(struct pose_reference, crc))) return -EBADMSG;
+    reuse_reference = true;
+    rc = motion_begin();
+    struct prov_motion motion;
+    prov_motion_init(&motion, reference.mg, k_uptime_get_32());
+    uint16_t threshold = ez_factory_pose_delta_mg();
     bool accepted = false;
     int64_t deadline = k_uptime_get() + PROV_MOTION_WINDOW_MS;
     while (!rc && k_uptime_get() < deadline) {
-        rc = i2c_reg_read_byte_dt(&imu, 0x1e, &ready);
-        if (rc) break;
-        if (ready & 1) {
-            rc = i2c_burst_read_dt(&imu, 0x28, raw, sizeof(raw));
-            if (rc) break;
-            int32_t mg[3];
-            for (unsigned i = 0; i < 3; ++i)
-                mg[i] = (int16_t)sys_get_le16(&raw[i*2]) * 244 / 1000;
-            accepted = prov_motion_sample(&motion, k_uptime_get_32(), mg,
-                                          threshold_mg);
-            if (accepted) break;
-        }
-        k_msleep(2);
+        int32_t mg[3];
+        rc = motion_sample(mg, deadline);
+        if (!rc) accepted = prov_motion_sample(&motion, k_uptime_get_32(), mg, threshold);
+        if (accepted) break;
     }
-    /* Restore the normal on-demand scale and parked I2C before enabling BLE. */
-    int restore = configure_imu();
+    int restore = device_is_ready(imu.bus) ? configure_imu() : 0;
     int stop = bus_stop();
+    if (rc == -ETIMEDOUT) rc = 0;
     last_imu_error = rc ? rc : restore ? restore : stop;
+    if (accepted) reuse_reference = false;
     return last_imu_error ? last_imu_error : accepted ? 1 : 0;
 }
 int board_prov_motion_arm(void)
 {
     if (observed_mask) return -EBUSY;
-    int rc = bus_start();
-    if (!rc) rc = configure_imu();
-    /* AN5130: low-power 26 Hz / +/-8 g. Candidate slope threshold
-     * tracks half the factory dynamic threshold (0.5 g with the 1 g default).
-     * Only repeated multi-axis software validation can enable Bluetooth. */
-    if (!rc) rc = write_reg(0x58, 0x81); /* LIR + INTERRUPTS_ENABLE, slope */
-    uint16_t threshold = ez_factory_shake_threshold_mg();
-    uint8_t candidate = (uint8_t)DIV_ROUND_UP(threshold, 250U);
-    if (!rc) rc = write_reg(0x5b, candidate); /* 1 LSB = 8 g / 64 = 125 mg */
-    if (!rc) rc = write_reg(0x5c, 0);    /* one wake sample */
-    if (!rc) rc = write_reg(0x10, 0x2c); /* 26 Hz, +/-8 g */
-    if (!rc) k_msleep(160);             /* settle slope filter before routing */
+    if (!device_is_ready(reference_ram)) return -ENODEV;
+    int rc = motion_begin();
+    /* Capture a quiet reference before sleeping, rather than mistaking the
+     * first post-wake sample for the old pose. No flash writes are required. */
+    struct pose_reference reference = {.magic = 0x455a5052};
+    int32_t previous[3] = {0};
+    unsigned quiet = 0;
+    if (reuse_reference) {
+        rc = retained_mem_read(reference_ram, 0, (uint8_t *)&reference, sizeof(reference));
+        if (!rc && (reference.magic != 0x455a5052 || reference.crc !=
+            crc32_ieee((const uint8_t *)&reference, offsetof(struct pose_reference, crc)))) rc = -EBADMSG;
+        if (!rc) quiet = 8;
+    }
+    int64_t deadline = k_uptime_get() + 3000;
+    while (!rc && quiet < 8) {
+        int32_t mg[3];
+        rc = motion_sample(mg, deadline);
+        if (rc) break;
+        int64_t magnitude2 = 0; bool stable = true;
+        for (unsigned i = 0; i < 3; ++i) {
+            magnitude2 += (int64_t)mg[i]*mg[i];
+            if (abs(mg[i]-previous[i]) > 100) stable = false;
+            previous[i] = mg[i];
+        }
+        if (!stable || magnitude2 < 850LL*850 || magnitude2 > 1150LL*1150) quiet = 0;
+        else ++quiet;
+        memcpy(reference.mg, mg, sizeof(reference.mg));
+    }
+    reference.crc = crc32_ieee((const uint8_t *)&reference, offsetof(struct pose_reference, crc));
+    if (!rc) rc = retained_mem_write(reference_ram, 0, (const uint8_t *)&reference, sizeof(reference));
+    /* Latched 6D orientation interrupt; no slope/high-pass wake detector. */
+    if (!rc) rc = write_reg(0x58, 0x81);
+    uint8_t angle = ez_factory_pose_angle_deg();
+    uint8_t setting = angle == 80 ? 0 : angle == 70 ? 1 : angle == 60 ? 2 : 3;
+    if (!rc) rc = write_reg(0x59, setting << 5);
+    if (!rc) rc = write_reg(0x5e, 0x04); /* 6D on INT1 */
+    /* Let the initial 6D classification latch before clearing it; otherwise a
+     * stationary pose could wake the MCU immediately after System OFF. */
+    for (unsigned i = 0; !rc && i < 3; ++i) {
+        int32_t discard[3]; rc = motion_sample(discard, k_uptime_get() + 200);
+    }
     uint8_t source;
-    if (!rc) rc = i2c_reg_read_byte_dt(&imu, 0x1b, &source);
-    if (!rc) rc = write_reg(0x5e, 0x20); /* wake-up on INT1 */
-    if (rc) (void)set_odr(0);
+    if (!rc) rc = i2c_reg_read_byte_dt(&imu, 0x1d, &source); /* clear initial orientation latch */
+    if (rc && device_is_ready(imu.bus)) (void)set_odr(0);
     int stop = bus_stop();
     if (!rc) rc = gpio_pin_configure_dt(&imu_irq, GPIO_INPUT);
     last_imu_error = rc ? rc : stop;
@@ -263,8 +318,6 @@ int board_prov_motion_arm(void)
 }
 void board_prov_motion_sense(void)
 {
-    /* Called with interrupts locked immediately before System OFF. No GPIOTE
-     * channel or callback is needed: retained GPIO SENSE is the wake source. */
     uint32_t pin = NRF_GPIO_PIN_MAP(DT_PROP(DT_GPIO_CTLR(DT_ALIAS(imu0), irq_gpios), port),
                                     DT_GPIO_PIN(DT_ALIAS(imu0), irq_gpios));
     nrf_gpio_cfg_sense_set(pin, NRF_GPIO_PIN_SENSE_HIGH);
