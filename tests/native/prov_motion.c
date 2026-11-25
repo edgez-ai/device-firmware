@@ -29,7 +29,7 @@ int main(void) {
   /* Changing only one component, one short impact, and free fall fail. */
   start(&s, 0);
   for (unsigned t = 0; t < 3000; t += 40)
-    assert(!feed(&s, t, 600, 0, 1000, 500));
+    assert(!feed(&s, t, 600, 0, 800, 500));
   start(&s, 0);
   assert(!feed(&s, 100, 866, 0, 500, 500));
   for (unsigned t = 140; t < 3000; t += 40)
@@ -43,7 +43,7 @@ int main(void) {
   /* Different axes at different instants must not be accumulated. */
   start(&s, 0);
   for (unsigned t = 0; t < 3000; t += 40)
-    assert(!feed(&s, t, (t / 40) % 2 ? 600 : 0, (t / 40) % 2 ? 0 : 600, 1000,
+    assert(!feed(&s, t, (t / 40) % 2 ? 600 : 0, (t / 40) % 2 ? 0 : 600, 800,
                  500));
   start(&s, 0);
   for (unsigned t = 0; t < 500; t += 40)

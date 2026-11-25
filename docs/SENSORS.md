@@ -259,3 +259,15 @@ new firmware was flashed, and cancellation was exercised. A rapid re-observation
 attempt twice encountered gateway REST timeouts; a later start/cancel cycle
 passed. This intermittent gateway behavior remains recorded rather than being
 claimed as resolved by the local clock change.
+
+## Unprovisioned posture wake
+
+The ODR-off and disconnected-IRQ policy above describes normal configured
+operation without active sensor observers. Unprovisioned System OFF uses a
+separate posture-wake policy: the accelerometer runs at 26 Hz low power, the
+gyroscope remains off, INT1/P0.02 wakes the MCU on a 6D orientation change, and a
+CRC-protected pre-sleep gravity vector resides in reserved retained SRAM.
+Bluetooth opens only after a settled two-axis change passes the three-second
+verification. See [BLE provisioning](BLE-PROVISIONING.md#battery-provisioning-timeout-and-posture-wake)
+for the default 500 mg delta, factory angle setting, retention cost and board
+validation requirements. No periodic MCU polling runs in System OFF.
