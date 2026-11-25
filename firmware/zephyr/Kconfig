@@ -47,6 +47,11 @@ config EZ_DEV54_SENSORS
 	bool "On-demand IMU and battery voltage LwM2M objects"
 	default n
 
+config EZ_DEV54_IMU_WAKE
+	bool "LwM2M-configurable IMU wake during timed WNM sleep"
+	depends on EZ_DEV54_WNM_SLEEP && EZ_DEV54_SENSORS && SETTINGS
+	default y
+
 config EZ_DEV54_WNM_PARK_PINS
 	bool "Park HaLow host signal pins during WNM chip powerdown"
 	depends on EZ_DEV54_WNM_SLEEP && SOC_NRF54L15_CPUAPP && PM_DEVICE

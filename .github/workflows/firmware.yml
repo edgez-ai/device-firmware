@@ -11,6 +11,10 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+      - name: Fetch Wakaama headers for WNM tests
+        run: git submodule update --init third_party/wakaama
+      - name: Test WNM timer, IMU wake and persistent configuration with sanitizers
+        run: python3 tests/test_wnm_sleep.py
       - name: Test factory compatibility, CRC and threshold overrides
         run: python3 tests/test_factory_data.py
       - name: Test the three-second two-axis gyro gate with sanitizers

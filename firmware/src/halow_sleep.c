@@ -2,13 +2,17 @@
  * Vendor object 31026: one-shot WNM deep sleep over the existing DTIM link.
  */
 #include "halow_sleep.h"
+#include "imu_wake.h"
+#if defined(CONFIG_EZ_DEV54_IMU_WAKE)
+#include "halow_light.h"
+#endif
 #include <errno.h>
 #include <limits.h>
 #include <string.h>
 #include <zephyr/kernel.h>
 
 #define OBJECT_ID 31026
-#define RESOURCE_COUNT 8
+#define RESOURCE_COUNT 12
 #define RESPONSE_GRACE_MS 2000
 #define DRAIN_LIMIT_MS 10000
 
@@ -25,6 +29,33 @@ static struct request_key {
     uint8_t token[8], token_length;
 } request, accepted;
 static int64_t accepted_until;
+static int wake_reason;
+#if defined(CONFIG_EZ_DEV54_IMU_WAKE)
+static bool imu_armed;
+static struct imu_wake_config wake_config(void) { return imu_wake_config_get(); }
+static int arm_wake(void)
+{
+    struct imu_wake_config c = wake_config();
+    if (!c.mode) return 0;
+    int rc = board_imu_wake_arm(&c, halow_light_wake);
+    imu_armed = rc == 0;
+    return rc;
+}
+static int disarm_wake(void)
+{
+    if (!imu_armed) return 0;
+    imu_armed = false;
+    return board_imu_wake_disarm();
+}
+static bool imu_fired(void) { return imu_armed && board_imu_wake_fired(); }
+#else
+static struct imu_wake_config wake_config(void)
+{ return (struct imu_wake_config){IMU_WAKE_DISABLED, 500, 60}; }
+static int arm_wake(void) { return 0; }
+static int disarm_wake(void) { return 0; }
+static bool imu_fired(void) { return false; }
+#endif
+
 
 void halow_sleep_request_begin(void *peer, const uint8_t *packet, size_t length)
 {
@@ -76,11 +107,16 @@ int halow_sleep_step(lwm2m_context_t *ctx, bool online)
     if (state == SLEEPING) {
         /* DHCP/server/AP state can expire while the radio is deliberately off.
          * Honour the requested timer; recover connectivity after wake. */
-        if (remaining(deadline)) return remaining(deadline);
+        bool interrupt = imu_fired();
+        if (!interrupt && remaining(deadline)) return remaining(deadline);
+        /* A latched IMU event wins a simultaneous timer expiry. */
+        wake_reason = interrupt ? (wake_config().mode == IMU_WAKE_MOTION ? 2 : 3) : 1;
         state = WAKING;
         slept_ms = k_uptime_get() - sleep_started;
         int64_t start = k_uptime_get();
-        int rc = halow_wnm_exit(); /* Always restore the IP interface, even on error. */
+        int cleanup = disarm_wake();
+        int rc = halow_wnm_exit(); /* Always restore IP even if IMU cleanup failed. */
+        if (!rc) rc = cleanup;
         exit_ms = k_uptime_get() - start;
         ++cycles;
         finished(ctx, rc ? rc : online ? 0 : -ENETDOWN);
@@ -94,14 +130,19 @@ int halow_sleep_step(lwm2m_context_t *ctx, bool online)
         return 100;
     }
     int64_t start = k_uptime_get();
-    int rc = halow_wnm_enter();
-    entry_ms = k_uptime_get() - start;
-    if (rc == -EBUSY && remaining(drain_deadline)) return 100;
+    int rc = arm_wake();
     if (rc) { finished(ctx, rc); return -1; }
+    rc = halow_wnm_enter();
+    entry_ms = k_uptime_get() - start;
+    if (rc) {
+        int cleanup = disarm_wake();
+        if (!cleanup && rc == -EBUSY && remaining(drain_deadline)) return 100;
+        finished(ctx, cleanup ? cleanup : rc); return -1;
+    }
     state = SLEEPING;
     sleep_started = k_uptime_get();
     deadline = sleep_started + requested_s * 1000;
-    return remaining(deadline);
+    return imu_fired() ? 0 : remaining(deadline);
 }
 static uint8_t discover(lwm2m_context_t *ctx, uint16_t instance, int *count,
                         lwm2m_data_t **data, lwm2m_object_t *object)
@@ -141,6 +182,10 @@ static uint8_t read_sleep(lwm2m_context_t *ctx, uint16_t instance, int *count,
         case 5: lwm2m_data_encode_int(entry_ms, r); break;
         case 6: lwm2m_data_encode_int(exit_ms, r); break;
         case 7: lwm2m_data_encode_int(slept_ms, r); break;
+        case 8: lwm2m_data_encode_int(wake_config().mode, r); break;
+        case 9: lwm2m_data_encode_int(wake_config().motion_mg, r); break;
+        case 10: lwm2m_data_encode_int(wake_config().angle_deg, r); break;
+        case 11: lwm2m_data_encode_int(wake_reason, r); break;
         }
     }
     return COAP_205_CONTENT;
@@ -150,13 +195,46 @@ static uint8_t write_sleep(lwm2m_context_t *ctx, uint16_t instance, int count,
 {
     (void)object; (void)type;
     if (instance) return COAP_404_NOT_FOUND;
-    if (count != 1) return COAP_400_BAD_REQUEST;
-    if (data[0].id != 1) return data[0].id < RESOURCE_COUNT ? COAP_405_METHOD_NOT_ALLOWED : COAP_404_NOT_FOUND;
+    if (count < 1 || count > 4 || !data) return COAP_400_BAD_REQUEST;
     if (state != IDLE) return COAP_503_SERVICE_UNAVAILABLE;
-    int64_t value;
-    if (!lwm2m_data_decode_int(data, &value) || value < 1 || value > 86400) return COAP_400_BAD_REQUEST;
-    duration_s = value;
-    changed(ctx, 1);
+    struct imu_wake_config config = wake_config();
+    int64_t duration = duration_s;
+    unsigned seen = 0;
+    bool config_changed = false;
+    for (int i = 0; i < count; ++i) {
+        unsigned rid = data[i].id;
+        if (rid >= RESOURCE_COUNT) return COAP_404_NOT_FOUND;
+        if (rid != 1 && (rid < 8 || rid > 10)) return COAP_405_METHOD_NOT_ALLOWED;
+        if (seen & (1U << rid)) return COAP_400_BAD_REQUEST;
+        seen |= 1U << rid;
+        int64_t value;
+        if (!lwm2m_data_decode_int(&data[i], &value)) return COAP_400_BAD_REQUEST;
+        if (rid == 1) {
+            if (value < 1 || value > 86400) return COAP_400_BAD_REQUEST;
+            duration = value;
+        } else {
+            if (value < 0 || value > UINT16_MAX) return COAP_400_BAD_REQUEST;
+            if (rid == 8) {
+                if (value > IMU_WAKE_ORIENTATION) return COAP_400_BAD_REQUEST;
+                config.mode = value;
+            } else if (rid == 9) config.motion_mg = value;
+            else {
+                if (value > UINT8_MAX) return COAP_400_BAD_REQUEST;
+                config.angle_deg = value;
+            }
+            config_changed = true;
+        }
+    }
+    if (!imu_wake_config_valid(&config)) return COAP_400_BAD_REQUEST;
+    if (config_changed) {
+#if defined(CONFIG_EZ_DEV54_IMU_WAKE)
+        if (imu_wake_config_set(&config)) return COAP_500_INTERNAL_SERVER_ERROR;
+#else
+        return COAP_405_METHOD_NOT_ALLOWED;
+#endif
+    }
+    duration_s = duration;
+    for (int i = 0; i < count; ++i) changed(ctx, data[i].id);
     return COAP_204_CHANGED;
 }
 static uint8_t execute_sleep(lwm2m_context_t *ctx, uint16_t instance, uint16_t resource,
@@ -175,7 +253,7 @@ static uint8_t execute_sleep(lwm2m_context_t *ctx, uint16_t instance, uint16_t r
     /* Keep the one-shot result across the sleeping interval and the CoAP
      * exchange lifetime after wake, including AP-buffered retransmissions. */
     accepted_until = k_uptime_get() + (requested_s + 300) * 1000;
-    state = PENDING; last_result = 0;
+    state = PENDING; last_result = 0; wake_reason = 0;
     deadline = k_uptime_get() + RESPONSE_GRACE_MS;
     drain_deadline = deadline + DRAIN_LIMIT_MS;
     changed(ctx, 2);

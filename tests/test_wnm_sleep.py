@@ -16,11 +16,11 @@ class WnmSleep(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             binary = Path(tmp)/'wnm-sleep'
             subprocess.run(['cc','-std=c11','-Wall','-Wextra','-Werror',
-                '-fsanitize=address,undefined','-DLWM2M_CLIENT_MODE',
+                '-fsanitize=address,undefined','-DLWM2M_CLIENT_MODE','-DCONFIG_EZ_DEV54_IMU_WAKE=1','-DRADAR_HALOW_LIGHT',
                 *(['-DCONFIG_EZ_DEV54_WNM_PARK_PINS=1'] if parking else []),
                 '-I'+str(ROOT/'tests/native/wnm_platform'), '-I'+str(ROOT/'tests/native'),
                 '-I'+str(ROOT/'firmware/src'), '-I'+str(ROOT/'third_party/wakaama/include'),
-                str(ROOT/'firmware/src/halow_sleep.c'),str(ROOT/'firmware/src/halow_wnm.c'),
+                str(ROOT/'firmware/src/imu_wake_config.c'),str(ROOT/'firmware/src/halow_sleep.c'),str(ROOT/'firmware/src/halow_wnm.c'),
                 str(ROOT/'tests/native/wnm_sleep.c'),'-o',str(binary)],check=True)
             subprocess.run([str(binary)],check=True)
 if __name__ == '__main__': unittest.main()

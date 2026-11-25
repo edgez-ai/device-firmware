@@ -1,11 +1,41 @@
 /* Real object state machine and platform boundary, with a fake AP/clock. */
 #include "halow_sleep.h"
+#include "imu_wake.h"
+#include <string.h>
+#include <zephyr/settings/settings.h>
 #include <mmwlan.h>
 #include <zephyr/net/net_if.h>
 #include <assert.h>
 #include <errno.h>
 #include <stdlib.h>
 #include <stdio.h>
+static bool imu_armed, imu_fired, fire_during_entry;
+static int arm_error, disarm_error, save_error, wakes;
+static uint8_t stored[8];
+static bool have_stored;
+int settings_subsys_init(void) { return 0; }
+static ssize_t read_stored(void *arg, void *buf, size_t size)
+{ (void)arg; memcpy(buf, stored, size); return size; }
+int settings_load_subtree(const char *name)
+{ assert(!strcmp(name, "ezwake")); return have_stored ? test_settings_load("config", 8, read_stored, NULL) : 0; }
+int settings_save_one(const char *name, const void *buf, size_t size)
+{
+    assert(!strcmp(name, "ezwake/config") && size == 8);
+    if (save_error) return save_error;
+    memcpy(stored, buf, size); have_stored = true; return 0;
+}
+static void (*interrupt_notify)(void);
+void halow_light_wake(void) { ++wakes; }
+int board_imu_wake_arm(const struct imu_wake_config *c, void (*notify)(void))
+{
+    assert(!imu_armed && imu_wake_config_valid(c) && c->mode && notify);
+    if (arm_error) return arm_error;
+    imu_armed = true; imu_fired = false; interrupt_notify = notify; return 0;
+}
+int board_imu_wake_disarm(void)
+{ assert(imu_armed); imu_armed = false; imu_fired = false; return disarm_error; }
+bool board_imu_wake_fired(void) { return imu_fired; }
+static void fire_imu(void) { assert(imu_armed); imu_fired = true; interrupt_notify(); }
 static int64_t now = 1000;
 static struct net_if iface;
 static bool missing_iface;
@@ -38,7 +68,7 @@ int mmwlan_set_wnm_sleep_enabled_ext(const struct mmwlan_set_wnm_sleep_enabled_a
     assert(!pins_parked);
 #endif
     now += 20;
-    if (args->wnm_sleep_enabled) { ++enters; return enter_error; }
+    if (args->wnm_sleep_enabled) { ++enters; if (fire_during_entry) fire_imu(); return enter_error; }
     ++exits; return exit_error;
 }
 lwm2m_data_t *lwm2m_data_new(int n) { return calloc(n, sizeof(lwm2m_data_t)); }
@@ -48,11 +78,15 @@ int lwm2m_data_decode_int(const lwm2m_data_t *d, int64_t *v) {
     *v = d->value.asInteger; return 1;
 }
 void lwm2m_resource_value_changed(lwm2m_context_t *ctx, lwm2m_uri_t *uri) {
-    assert(ctx && !iface.suspended && uri->objectId == 31026 && uri->instanceId == 0 && uri->resourceId < 8);
+    assert(ctx && !iface.suspended && uri->objectId == 31026 && uri->instanceId == 0 && uri->resourceId < 12);
 }
 static int write_value(lwm2m_context_t *ctx, int64_t value) {
     lwm2m_data_t data = {.id = 1}; lwm2m_data_encode_int(value, &data);
     return halow_sleep.writeFunc(ctx, 0, 1, &data, &halow_sleep, LWM2M_WRITE_REPLACE_RESOURCES);
+}
+static int write_resource(lwm2m_context_t *ctx, unsigned rid, int64_t value) {
+    lwm2m_data_t d = {.id = rid}; lwm2m_data_encode_int(value, &d);
+    return halow_sleep.writeFunc(ctx,0,1,&d,&halow_sleep,LWM2M_WRITE_REPLACE_RESOURCES);
 }
 static int exec(lwm2m_context_t *ctx) { return halow_sleep.executeFunc(ctx, 0, 0, NULL, 0, &halow_sleep); }
 static int64_t read_value(lwm2m_context_t *ctx, uint16_t rid) {
@@ -144,10 +178,60 @@ int main(void) {
     assert(exits == prior); /* Do not call SDK when host SPI failed to resume. */
     restore_error = 0;
 #endif
+    /* Persistent configuration: reject invalid values without truncation. */
+    assert(imu_wake_config_init() == 0 && read_value(&ctx,8) == 0);
+    assert(read_value(&ctx,9) == 500 && read_value(&ctx,10) == 60);
+    assert(write_resource(&ctx,8,258) == COAP_400_BAD_REQUEST);
+    assert(write_resource(&ctx,9,31) == COAP_400_BAD_REQUEST);
+    assert(write_resource(&ctx,9,1969) == COAP_400_BAD_REQUEST);
+    assert(write_resource(&ctx,10,61) == COAP_400_BAD_REQUEST);
+    assert(write_resource(&ctx,11,0) == COAP_405_METHOD_NOT_ALLOWED);
+    lwm2m_data_t batch[2] = {{.id=1}, {.id=8}};
+    lwm2m_data_encode_int(20, &batch[0]); lwm2m_data_encode_int(1, &batch[1]);
+    save_error = -ENOSPC;
+    assert(halow_sleep.writeFunc(&ctx,0,2,batch,&halow_sleep,LWM2M_WRITE_REPLACE_RESOURCES) == COAP_500_INTERNAL_SERVER_ERROR);
+    assert(read_value(&ctx,1) == 10 && read_value(&ctx,8) == 0);
+    save_error = 0;
+    assert(halow_sleep.writeFunc(&ctx,0,2,batch,&halow_sleep,LWM2M_WRITE_REPLACE_RESOURCES) == COAP_204_CHANGED);
+    assert(read_value(&ctx,1) == 20 && read_value(&ctx,8) == 1);
+    assert(write_resource(&ctx,9,750) == COAP_204_CHANGED);
+    assert(imu_wake_config_init() == 0 && read_value(&ctx,9) == 750);
+    stored[0] ^= 1;
+    assert(imu_wake_config_init() == -EINVAL && read_value(&ctx,9) == 750);
+    stored[0] ^= 1;
+    /* Hardware setup errors abort entry; AP rejection disarms IMU. */
+    arm_error = -EIO; prior = enters;
+    assert(exec(&ctx) == COAP_204_CHANGED); now += 2000;
+    assert(halow_sleep_step(&ctx,true) == -1 && enters == prior && !imu_armed);
+    arm_error = 0; enter_error = 13;
+    assert(exec(&ctx) == COAP_204_CHANGED); now += 2000;
+    assert(halow_sleep_step(&ctx,true) == -1 && !imu_armed && !iface.suspended);
+    enter_error = 0;
+    /* IMU interrupts shorten WNM and wake the event poll exactly as the board does. */
+    assert(exec(&ctx) == COAP_204_CHANGED); now += 2000;
+    assert(halow_sleep_step(&ctx,true) == 20000 && imu_armed);
+    assert(write_resource(&ctx,8,2) == COAP_503_SERVICE_UNAVAILABLE);
+    now += 500; fire_imu();
+    assert(wakes == 1 && halow_sleep_step(&ctx,true) == -1 && !imu_armed && !iface.suspended);
+    assert(read_value(&ctx,11) == 2 && read_value(&ctx,7) == 500);
+    /* Latched event during WNM negotiation must not be lost. */
+    assert(write_resource(&ctx,8,2) == COAP_204_CHANGED);
+    fire_during_entry = true;
+    assert(exec(&ctx) == COAP_204_CHANGED); now += 2000;
+    assert(halow_sleep_step(&ctx,true) == 0 && imu_armed);
+    fire_during_entry = false; disarm_error = -EIO;
+    assert(halow_sleep_step(&ctx,true) == -1 && !iface.suspended && read_value(&ctx,3) == -EIO);
+    assert(read_value(&ctx,11) == 3);
+    disarm_error = 0;
+    /* Enabled IMU still permits timer expiry and is cleaned up. */
+    assert(exec(&ctx) == COAP_204_CHANGED); now += 2000;
+    assert(halow_sleep_step(&ctx,true) == 20000); now += 20000;
+    assert(halow_sleep_step(&ctx,true) == -1 && !imu_armed && read_value(&ctx,11) == 1);
+    assert(write_resource(&ctx,8,0) == COAP_204_CHANGED);
     int count = 0; lwm2m_data_t *data = NULL;
-    assert(halow_sleep.readFunc(&ctx,0,&count,&data,&halow_sleep) == COAP_205_CONTENT && count == 7 && data[0].id == 1);
+    assert(halow_sleep.readFunc(&ctx,0,&count,&data,&halow_sleep) == COAP_205_CONTENT && count == 11 && data[0].id == 1);
     free(data); count = 0; data = NULL;
-    assert(halow_sleep.discoverFunc(&ctx,0,&count,&data,&halow_sleep) == COAP_205_CONTENT && count == 8 && data[0].id == 0);
+    assert(halow_sleep.discoverFunc(&ctx,0,&count,&data,&halow_sleep) == COAP_205_CONTENT && count == 12 && data[0].id == 0);
     free(data); assert(resumes == enters);
     puts("WNM object timing, AP negotiation, TX drain and failure recovery passed");
 }

@@ -1,0 +1,136 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LWM2M xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://openmobilealliance.org/tech/profiles/LWM2M.xsd">
+  <Object ObjectType="MODefinition">
+    <Name>EdgeZ WNM Sleep</Name>
+    <Description1><![CDATA[Vendor object for one-shot WNM deep sleep while preserving the HaLow association and online DTIM settings. WNM negotiation requires AP support. LwM2M traffic and sensor streaming pause during sleep and resume on wake. An optional low-power accelerometer interrupt can end sleep early. IMU settings persist across reboot and are independent of transport-mode provisioning. Long sleeps may outlive AP association, DHCP or LwM2M registration lifetimes and require recovery.]]></Description1>
+    <ObjectID>31026</ObjectID>
+    <ObjectURN>urn:oma:lwm2m:x:31026</ObjectURN>
+    <LWM2MVersion>1.1</LWM2MVersion>
+    <ObjectVersion>1.0</ObjectVersion>
+    <MultipleInstances>Single</MultipleInstances>
+    <Mandatory>Optional</Mandatory>
+    <Resources>
+      <Item ID="0">
+        <Name>Sleep</Name>
+        <Operations>E</Operations>
+        <MultipleInstances>Single</MultipleInstances>
+        <Mandatory>Mandatory</Mandatory>
+        <Type></Type>
+        <RangeEnumeration></RangeEnumeration>
+        <Units></Units>
+        <Description><![CDATA[Execute once, without arguments. Returns 2.04 before a two-second grace period, then negotiates WNM Sleep with MM8108 chip powerdown. Requires AP WNM support. Online DTIM configuration is unchanged; DTIM reception is skipped only while WNM sleep is active.]]></Description>
+      </Item>
+      <Item ID="1">
+        <Name>Sleep Duration</Name>
+        <Operations>RW</Operations>
+        <MultipleInstances>Single</MultipleInstances>
+        <Mandatory>Mandatory</Mandatory>
+        <Type>Integer</Type>
+        <RangeEnumeration>1..86400</RangeEnumeration>
+        <Units>s</Units>
+        <Description><![CDATA[Duration after successful WNM entry, 1..86400 seconds. Default 60. Stored in RAM until reboot. Changes and repeated Executes are rejected while a sleep request is pending.]]></Description>
+      </Item>
+      <Item ID="2">
+        <Name>Sleep State</Name>
+        <Operations>R</Operations>
+        <MultipleInstances>Single</MultipleInstances>
+        <Mandatory>Mandatory</Mandatory>
+        <Type>Integer</Type>
+        <RangeEnumeration></RangeEnumeration>
+        <Units></Units>
+        <Description><![CDATA[0 idle, 1 pending, 2 sleeping, 3 waking. Resources are unreachable while asleep. The nRF54L15 retains RAM and waits for the timer or an enabled IMU interrupt.]]></Description>
+      </Item>
+      <Item ID="3">
+        <Name>Last Result</Name>
+        <Operations>R</Operations>
+        <MultipleInstances>Single</MultipleInstances>
+        <Mandatory>Mandatory</Mandatory>
+        <Type>Integer</Type>
+        <RangeEnumeration></RangeEnumeration>
+        <Units></Units>
+        <Description><![CDATA[0 success; positive values are Morse mmwlan_status codes; negative values are local errno values. Execute acceptance does not guarantee AP sleep negotiation succeeded.]]></Description>
+      </Item>
+      <Item ID="4">
+        <Name>Completed Sleep Cycles</Name>
+        <Operations>R</Operations>
+        <MultipleInstances>Single</MultipleInstances>
+        <Mandatory>Mandatory</Mandatory>
+        <Type>Integer</Type>
+        <RangeEnumeration></RangeEnumeration>
+        <Units></Units>
+        <Description><![CDATA[Number of successful WNM entries followed by an exit attempt since boot.]]></Description>
+      </Item>
+      <Item ID="5">
+        <Name>Last Entry Time</Name>
+        <Operations>R</Operations>
+        <MultipleInstances>Single</MultipleInstances>
+        <Mandatory>Mandatory</Mandatory>
+        <Type>Integer</Type>
+        <RangeEnumeration></RangeEnumeration>
+        <Units>ms</Units>
+        <Description><![CDATA[Time spent negotiating the most recent WNM entry attempt.]]></Description>
+      </Item>
+      <Item ID="6">
+        <Name>Last Exit Time</Name>
+        <Operations>R</Operations>
+        <MultipleInstances>Single</MultipleInstances>
+        <Mandatory>Mandatory</Mandatory>
+        <Type>Integer</Type>
+        <RangeEnumeration></RangeEnumeration>
+        <Units>ms</Units>
+        <Description><![CDATA[Time spent in the most recent WNM exit attempt.]]></Description>
+      </Item>
+      <Item ID="7">
+        <Name>Last Sleep Time</Name>
+        <Operations>R</Operations>
+        <MultipleInstances>Single</MultipleInstances>
+        <Mandatory>Mandatory</Mandatory>
+        <Type>Integer</Type>
+        <RangeEnumeration></RangeEnumeration>
+        <Units>ms</Units>
+        <Description><![CDATA[Measured interval from successful WNM entry to exit start, excluding negotiation time.]]></Description>
+      </Item>
+      <Item ID="8">
+        <Name>IMU Wake Mode</Name>
+        <Operations>RW</Operations>
+        <MultipleInstances>Single</MultipleInstances>
+        <Mandatory>Optional</Mandatory>
+        <Type>Integer</Type>
+        <RangeEnumeration>0..2</RangeEnumeration>
+        <Units></Units>
+        <Description><![CDATA[0 disabled (default, timer only); 1 motion; 2 six-direction orientation. Saved persistently. Changes are accepted only while idle. The first timer or IMU event ends sleep; no gyroscope verification or BLE provisioning is started.]]></Description>
+      </Item>
+      <Item ID="9">
+        <Name>IMU Motion Threshold</Name>
+        <Operations>RW</Operations>
+        <MultipleInstances>Single</MultipleInstances>
+        <Mandatory>Optional</Mandatory>
+        <Type>Integer</Type>
+        <RangeEnumeration>32..1968</RangeEnumeration>
+        <Units>mg</Units>
+        <Description><![CDATA[Default 500 mg. Motion mode uses a slope-filtered acceleration interrupt on any axis, rounded upward to a hardware step of 31.25 mg at +/-2 g full scale. Saved persistently. Not the two-axis transport-mode validation threshold.]]></Description>
+      </Item>
+      <Item ID="10">
+        <Name>IMU Orientation Threshold</Name>
+        <Operations>RW</Operations>
+        <MultipleInstances>Single</MultipleInstances>
+        <Mandatory>Optional</Mandatory>
+        <Type>Integer</Type>
+        <RangeEnumeration>50,60,70,80</RangeEnumeration>
+        <Units>deg</Units>
+        <Description><![CDATA[Default 60 degrees. Six-direction hardware classification threshold relative to gravity, not a relative rotation angle measured from the initial pose. Saved persistently.]]></Description>
+      </Item>
+      <Item ID="11">
+        <Name>Last Wake Reason</Name>
+        <Operations>R</Operations>
+        <MultipleInstances>Single</MultipleInstances>
+        <Mandatory>Optional</Mandatory>
+        <Type>Integer</Type>
+        <RangeEnumeration>0..3</RangeEnumeration>
+        <Units></Units>
+        <Description><![CDATA[0 none since latest Execute; 1 timer; 2 IMU motion; 3 IMU orientation. A latched IMU event takes priority if the timer expires simultaneously.]]></Description>
+      </Item>
+    </Resources>
+    <Description2><![CDATA[31026 is an EdgeZ vendor object identifier; this is not a registered OMA standard object.]]></Description2>
+  </Object>
+</LWM2M>

@@ -5,6 +5,10 @@
 #include "sensors_hw.h"
 #include "prov_motion.h"
 #include "factory_data.h"
+#if defined(CONFIG_EZ_DEV54_IMU_WAKE)
+#include "imu_wake.h"
+#include <zephyr/sys/atomic.h>
+#endif
 #include <hal/nrf_gpio.h>
 #include <errno.h>
 #include <stdlib.h>
@@ -290,5 +294,90 @@ void board_prov_motion_sense(void)
     uint32_t pin = NRF_GPIO_PIN_MAP(DT_PROP(DT_GPIO_CTLR(DT_ALIAS(imu0), irq_gpios), port),
                                     DT_GPIO_PIN(DT_ALIAS(imu0), irq_gpios));
     nrf_gpio_cfg_sense_set(pin, NRF_GPIO_PIN_SENSE_HIGH);
+}
+#endif
+
+#if defined(CONFIG_EZ_DEV54_IMU_WAKE)
+static atomic_t wake_armed, wake_fired;
+static struct gpio_callback wake_callback;
+static bool wake_callback_added;
+static void (*wake_notify)(void);
+static void notify_wake(struct k_work *work)
+{
+    (void)work;
+    if (wake_notify) wake_notify();
+}
+K_WORK_DEFINE(imu_notify_work, notify_wake);
+static void record_wake(void)
+{
+    if (atomic_cas(&wake_armed, 1, 0)) {
+        atomic_set(&wake_fired, 1);
+        (void)k_work_submit(&imu_notify_work);
+    }
+}
+static void imu_interrupt(const struct device *port, struct gpio_callback *cb, uint32_t pins)
+{
+    (void)port; (void)cb;
+    if (pins & BIT(imu_irq.pin)) record_wake();
+}
+bool board_imu_wake_fired(void) { return atomic_get(&wake_fired) != 0; }
+int board_imu_wake_disarm(void)
+{
+    atomic_clear(&wake_armed);
+    int irq = gpio_pin_interrupt_configure_dt(&imu_irq, GPIO_INT_DISABLE);
+    int rc = bus_start();
+    if (!rc) rc = configure_imu();
+    int stop = bus_stop();
+    int pin = gpio_pin_configure_dt(&imu_irq, GPIO_DISCONNECTED);
+    atomic_clear(&wake_fired);
+    last_imu_error = rc ? rc : irq ? irq : stop ? stop : pin;
+    return last_imu_error;
+}
+int board_imu_wake_arm(const struct imu_wake_config *config, void (*notify)(void))
+{
+    if (!imu_wake_config_valid(config) || !notify || config->mode == IMU_WAKE_DISABLED) return -EINVAL;
+    if (observed_mask) return -EBUSY;
+    atomic_clear(&wake_armed); atomic_clear(&wake_fired);
+    wake_notify = notify;
+    int rc = bus_start();
+    if (!rc) rc = configure_imu();
+    if (!rc) rc = write_reg(0x10, 0x20); /* 26 Hz low-power, +/-2 g, gyro off */
+    if (!rc) rc = write_reg(0x58, 0x81); /* latched basic interrupts */
+    if (config->mode == IMU_WAKE_MOTION) {
+        /* Threshold is rounded up in 31.25 mg steps (2 g / 64). */
+        uint8_t threshold = DIV_ROUND_UP((uint32_t)config->motion_mg*64, 2000U);
+        if (!rc) rc = write_reg(0x5b, threshold);
+        if (!rc) rc = write_reg(0x5c, 0); /* one slope-filter sample */
+        if (!rc) rc = write_reg(0x5e, 0x20);
+    } else {
+        uint8_t angle = config->angle_deg;
+        uint8_t setting = angle == 80 ? 0 : angle == 70 ? 1 : angle == 60 ? 2 : 3;
+        if (!rc) rc = write_reg(0x17, 0x01); /* LPF2 feeds 6D */
+        if (!rc) rc = write_reg(0x59, setting << 5);
+        if (!rc) rc = write_reg(0x5e, 0x04);
+    }
+    if (!rc) k_msleep(200); /* settle/clear the initial classification */
+    uint8_t source;
+    if (!rc) rc = i2c_reg_read_byte_dt(&imu, config->mode == IMU_WAKE_MOTION ? 0x1b : 0x1d, &source);
+    int stop = bus_stop();
+    if (!rc) rc = stop;
+    if (!rc) rc = gpio_pin_configure_dt(&imu_irq, GPIO_INPUT);
+    if (!rc && !wake_callback_added) {
+        gpio_init_callback(&wake_callback, imu_interrupt, BIT(imu_irq.pin));
+        rc = gpio_add_callback(imu_irq.port, &wake_callback);
+        if (!rc) wake_callback_added = true;
+    }
+    if (!rc) {
+        atomic_set(&wake_armed, 1);
+        rc = gpio_pin_interrupt_configure_dt(&imu_irq, GPIO_INT_EDGE_TO_ACTIVE);
+        /* Cover an event in the narrow latch-clear/IRQ-enable race. */
+        if (!rc) {
+            int level = gpio_pin_get_dt(&imu_irq);
+            if (level < 0) rc = level;
+            else if (level) record_wake();
+        }
+    }
+    if (rc) { (void)board_imu_wake_disarm(); last_imu_error = rc; }
+    return rc;
 }
 #endif

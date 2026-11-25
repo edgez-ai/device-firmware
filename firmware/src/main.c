@@ -7,6 +7,9 @@
 #include "hardware_uart.h"
 #include "hardware_memory.h"
 #include "ble_prov.h"
+#if defined(CONFIG_EZ_DEV54_IMU_WAKE)
+#include "imu_wake.h"
+#endif
 #include "radar_app.h"
 #include "radar_mqtt.h"
 #if defined(CONFIG_EZ_DEV54_SENSORS)
@@ -18,6 +21,10 @@ LOG_MODULE_REGISTER(main, CONFIG_RADAR_LOG_LEVEL);
 int main(void)
 {
 	(void)hardware_config_init();
+#if defined(CONFIG_EZ_DEV54_IMU_WAKE)
+	int wake_config_rc = imu_wake_config_init();
+	if (wake_config_rc) LOG_WRN("IMU wake settings initialization: %d", wake_config_rc);
+#endif
 	if (hardware_uart_prepare()) return -1;
 	int memory_rc = hardware_memory_init();
 	if (memory_rc) LOG_ERR("Peripheral memory allocation failed: %d", memory_rc);

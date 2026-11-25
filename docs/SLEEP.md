@@ -168,3 +168,36 @@ Execute response, timeout while asleep, post-wake Read/Write, cycle count and
 last result on hardware; measure current with J-Link disconnected separately.
 
 Reference: [Morse WNM Sleep API](https://morsemicro.github.io/mm-iot-sdk/framework/doc/html/group__MMWLAN__WNM.html).
+
+## IMU wake during ordinary WNM sleep
+
+Object `31026/0` supports timer-or-IMU wake. This retains RAM and the normal
+network recovery path; it is separate from unprovisioned transport System OFF
+and its factory-configured orientation/gyroscope BLE gate. It never opens BLE.
+
+| Resource | Access | Meaning |
+| --- | --- | --- |
+| 8 | RW | Wake mode: 0 timer only (default), 1 motion, 2 orientation |
+| 9 | RW | Motion threshold in mg: 32..1968, default 500 |
+| 10 | RW | 6D orientation threshold: 50/60/70/80 degrees, default 60 |
+| 11 | R | Last cause: 0 none, 1 timer, 2 motion, 3 orientation |
+
+Write settings while idle, then Execute resource 0 as usual. Resources 8..10
+are persisted together in Zephyr Settings (`ezwake/config`); resource 1 remains
+RAM-only. A failed save rejects the entire write, including a batched duration
+change. Invalid/missing settings at boot leave timer-only defaults. Configuration
+requires `CONFIG_EZ_DEV54_IMU_WAKE` (enabled in the unified firmware).
+
+The IMU uses only its low-power 26 Hz accelerometer during WNM; its gyroscope is
+off. Motion is a slope-filtered interrupt on any axis, with the configured
+threshold rounded up to a 31.25 mg hardware step. Orientation is the sensor's
+six-direction gravity classification, not arbitrary relative rotation. Neither
+mode performs the transport-mode two-axis validation. IMU operation adds some
+sleep power; actual wake sensitivity and current need device measurement.
+
+Sensor observations pause before IMU arming and resume through the existing
+wake path. Setup failures abort sleep. The GPIO ISR only records the event and
+queues notification of the network event loop. IMU IRQ/ODR cleanup is attempted
+on both entry failure and wake; IP restoration is attempted even if cleanup
+fails. A latched IMU event takes priority over simultaneous timer expiry.
+The gateway model is mirrored in `docs/lwm2m/31026.xml`.
