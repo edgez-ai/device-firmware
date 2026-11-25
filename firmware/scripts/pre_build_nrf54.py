@@ -68,12 +68,16 @@ def patch_platformio_builder():
         "# build custom-command outputs that SCons cannot produce, then reload the\n"
         "# code model in case ninja regenerated CMake.\n"
         'if os.environ.get("RADAR_PIO_PREBUILD_TARGET"):\n'
-        '    ninja = os.path.join(platform.get_package_dir("tool-ninja"), "ninja")\n'
+        '    ninja = os.environ.get("EZ_DEV54_NINJA") or os.path.join(platform.get_package_dir("tool-ninja"), "ninja")\n'
         "    subprocess.check_call(\n"
         '        [ninja, "-C", BUILD_DIR, os.environ["RADAR_PIO_PREBUILD_TARGET"]])\n'
         "    codemodel = get_cmake_code_model(west_manifest)\n"
         "    target_configs = load_target_configurations(codemodel)\n"
     )
+    legacy_hook = hook.replace('os.environ.get("EZ_DEV54_NINJA") or ', '')
+    if legacy_hook in contents:
+        contents = contents.replace(legacy_hook, hook)
+        changed = True
     if hook not in contents:
         anchor = "target_configs = load_target_configurations(codemodel)\n"
         position = contents.find("\n" + anchor)
