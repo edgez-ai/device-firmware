@@ -38,6 +38,9 @@ bool prov_motion_sample(struct prov_motion *s, uint32_t now,
     }
     s->high = true;
   }
+  if (axes && s->peaks)
+    s->axes |=
+        axes; /* Axes may peak at different instants within an excursion. */
   /* Three distinct strong excursions, with at least two axes represented. */
   return s->peaks >= 3 && (s->axes & (s->axes - 1U)) != 0;
 }

@@ -58,6 +58,38 @@ class Tests(unittest.TestCase):
         record['hardware'] = 'gps'
         with self.assertRaises(ValueError): f.encode(record, occupied)
 
+    def test_motion_extension(self):
+        original = f.encode(self.sample())
+        self.assertEqual(f.summary(f.decode(original))['shake_threshold_mg'], 1000)
+        for mg in (500, 1000, 2000, 4000):
+            record = self.sample(); record.update(hardware='camera', shake_threshold_mg=mg)
+            page = f.encode(record, original)
+            self.assertEqual(page[:211], original[:211])
+            self.assertEqual(f.decode(page)['shake_threshold_mg'], mg)
+            self.assertEqual(f.decode(page)['hardware'], 'camera')
+            self.assertEqual(f.ble_qr(record), f.ble_qr(self.sample()))
+            threshold = ctypes.c_uint16(0)
+            self.assertEqual(self.lib.ez_factory_motion_parse(ctypes.create_string_buffer(page), len(page), ctypes.byref(threshold)), 0)
+            self.assertEqual(threshold.value, mg)
+            for offset in (272, 276, 278, 280, 282, 284):
+                corrupt = bytearray(page); corrupt[offset] ^= 1
+                self.assertNotIn('shake_threshold_mg', f.decode(corrupt))
+                self.assertLess(self.lib.ez_factory_motion_parse(ctypes.create_string_buffer(bytes(corrupt)), len(page), ctypes.byref(threshold)), 0)
+            updated = f.decode(page); updated['country'] = 'EU'
+            self.assertEqual(f.encode(updated, page)[272:288], page[272:288])
+            updated['shake_threshold_mg'] = None
+            cleared = f.encode(updated, page)
+            self.assertNotIn('shake_threshold_mg', f.decode(cleared))
+            self.assertEqual(cleared[256:272], page[256:272])
+        threshold = ctypes.c_uint16(0)
+        self.assertLess(self.lib.ez_factory_motion_parse(ctypes.create_string_buffer(original), len(original), ctypes.byref(threshold)), 0)
+        for invalid in (0, 499, 4001, True, 1000.5):
+            record = self.sample(); record['shake_threshold_mg'] = invalid
+            with self.assertRaises(ValueError): f.encode(record)
+        occupied = bytearray(original); occupied[272:288] = b'unknown-layout!!'
+        record = self.sample(); record['shake_threshold_mg'] = 1000
+        with self.assertRaises(ValueError): f.encode(record, occupied)
+
     def test_v2_interoperability_and_wifi(self):
         record = self.sample(); raw = f.encode(record)
         self.assertEqual(f.RECORD_SIZE, 211)

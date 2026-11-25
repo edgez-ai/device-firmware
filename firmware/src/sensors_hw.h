@@ -8,9 +8,10 @@ int board_sensors_error(void);
 int board_imu_observe(unsigned int mask);
 int board_imu_read(unsigned int sensor, double axes[3]);
 int board_voltage_read(double *volts);
-#endif
 
 /* Provisioning-only: no observers may be active. */
 int board_prov_motion_verify(void);
 int board_prov_motion_arm(void);
 void board_prov_motion_sense(void);
+
+#endif

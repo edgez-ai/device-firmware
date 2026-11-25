@@ -58,11 +58,16 @@ samples are checked for at most three seconds. Acceptance requires three
 distinct strong excursions, with no more than 800 ms between them, involving
 at least two of X/Y/Z across the gesture. A gravity estimate is subtracted;
 static gravity, slow tilts, one impact or repeated movement on one axis do not
-qualify. The default dynamic threshold is 2000 mg (2 g), adjustable with
-`CONFIG_EZ_DEV54_PROV_SHAKE_THRESHOLD_MG`. The sensor uses +/-8 g during this
+qualify. The default dynamic threshold is 1000 mg (1 g, approximately 9.81 m/s²),
+overridable in factory data. The optional 16-byte CRC-protected `EZPM` extension
+at factory-page offset 272 stores `shake_threshold_mg` (500–4000 mg). Each
+motion-wake verification reads and validates it anew; absent/invalid data uses
+1000 mg. No threshold is copied to NVS and no flash write occurs during wake.
+The original 211-byte identity record, PoP and hardware extension are unchanged. The sensor uses +/-8 g during this
 check and restores the normal on-demand measurement scale afterward.
 
-The hardware interrupt is only a candidate (1 g slope-filter threshold): it
+The hardware interrupt is only a candidate (half the selected threshold,
+rounded up to 125 mg steps; 0.5 g with the default 1 g setting): it
 wakes the MCU, not BLE. If the three-second test fails, the IMU is rearmed and
 the MCU returns to System OFF. If it passes, a new 180-second BLE provisioning
 window opens. Failed/unsaved Wi-Fi attempts also expire. Successful saved or
@@ -75,6 +80,18 @@ rather than entering a sleep state with no usable wake source. Runtime logging
 remains disabled. `prov_power_error` is a passive SWD diagnostic. Physical shake
 sensitivity and sleep current must be measured on the board with the debugger
 disconnected; native tests cannot establish the real power floor.
+
+Example: update a backed-up factory page while preserving its identity and
+other fields (the output file must be new):
+
+```bash
+python3 firmware/scripts/factory_data.py update \
+  --input /private/path/factory-before.bin --shake-threshold-mg 1000 \
+  --output /private/path/factory-updated.bin
+```
+
+Use `--clear-shake-threshold` to restore the default. This command creates an
+image; device programming remains an explicit separate `flash` operation.
 
 ## Factory records and flashing
 

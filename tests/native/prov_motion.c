@@ -5,7 +5,7 @@
 
 static bool sample(struct prov_motion *s, unsigned t, int x, int y, int z) {
   int32_t axes[] = {x, y, z};
-  return prov_motion_sample(s, t, axes, 2000);
+  return prov_motion_sample(s, t, axes, 1000);
 }
 static void rest(struct prov_motion *s, unsigned from, unsigned until) {
   for (unsigned t = from; t < until; t += 10)
@@ -27,6 +27,15 @@ int main(void) {
   pulses(true, true);
   pulses(false, false);
   struct prov_motion s = {0};
+  rest(&s, 0, 500);
+  assert(!sample(&s, 500, 4000, 0, 1000));
+  assert(
+      !sample(&s, 510, 4000, 4000, 1000)); /* staggered axes, one excursion */
+  rest(&s, 520, 700);
+  assert(!sample(&s, 700, 4000, 0, 1000));
+  rest(&s, 710, 900);
+  assert(sample(&s, 900, 4000, 0, 1000));
+  s = (struct prov_motion){0};
   rest(&s, 0, 3000); /* gravity and rest never count */
   s = (struct prov_motion){0};
   rest(&s, 0, 500);

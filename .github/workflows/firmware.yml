@@ -11,6 +11,8 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+      - name: Test factory compatibility, CRC and threshold overrides
+        run: python3 tests/test_factory_data.py
       - name: Test the three-second shake gate with sanitizers
         run: |
           cc -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined \

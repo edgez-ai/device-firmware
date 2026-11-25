@@ -9,4 +9,6 @@ const char *ez_factory_pop(void);
 const char *ez_factory_ble_name(void);
 /* -1 for no valid hardware flag; base selection is handled by the caller. */
 int ez_factory_hardware(void);
+/* Read and validate the optional motion extension on each call. */
+uint16_t ez_factory_shake_threshold_mg(void);
 #endif

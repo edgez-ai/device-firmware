@@ -4,6 +4,7 @@
  */
 #include "sensors_hw.h"
 #include "prov_motion.h"
+#include "factory_data.h"
 #include <hal/nrf_gpio.h>
 #include <errno.h>
 #include <zephyr/device.h>
@@ -209,6 +210,7 @@ int board_prov_motion_verify(void)
     if (!rc) rc = write_reg(0x10, 0x4c);
     uint8_t raw[6], ready;
     struct prov_motion motion = {0};
+    const uint16_t threshold_mg = ez_factory_shake_threshold_mg();
     bool accepted = false;
     int64_t deadline = k_uptime_get() + PROV_MOTION_WINDOW_MS;
     while (!rc && k_uptime_get() < deadline) {
@@ -221,7 +223,7 @@ int board_prov_motion_verify(void)
             for (unsigned i = 0; i < 3; ++i)
                 mg[i] = (int16_t)sys_get_le16(&raw[i*2]) * 244 / 1000;
             accepted = prov_motion_sample(&motion, k_uptime_get_32(), mg,
-                                          CONFIG_EZ_DEV54_PROV_SHAKE_THRESHOLD_MG);
+                                          threshold_mg);
             if (accepted) break;
         }
         k_msleep(2);
@@ -237,11 +239,13 @@ int board_prov_motion_arm(void)
     if (observed_mask) return -EBUSY;
     int rc = bus_start();
     if (!rc) rc = configure_imu();
-    /* AN5130: low-power 26 Hz / +/-8 g, slope-filter wake at 1 g.
-     * This is only a candidate interrupt. Software requires >=2 g on >=2
-     * axes and repeated excursions before Bluetooth can start. */
+    /* AN5130: low-power 26 Hz / +/-8 g. Candidate slope threshold
+     * tracks half the factory dynamic threshold (0.5 g with the 1 g default).
+     * Only repeated multi-axis software validation can enable Bluetooth. */
     if (!rc) rc = write_reg(0x58, 0x81); /* LIR + INTERRUPTS_ENABLE, slope */
-    if (!rc) rc = write_reg(0x5b, 8);    /* 8 * (8 g / 64) = 1 g */
+    uint16_t threshold = ez_factory_shake_threshold_mg();
+    uint8_t candidate = (uint8_t)DIV_ROUND_UP(threshold, 250U);
+    if (!rc) rc = write_reg(0x5b, candidate); /* 1 LSB = 8 g / 64 = 125 mg */
     if (!rc) rc = write_reg(0x5c, 0);    /* one wake sample */
     if (!rc) rc = write_reg(0x10, 0x2c); /* 26 Hz, +/-8 g */
     if (!rc) k_msleep(160);             /* settle slope filter before routing */
