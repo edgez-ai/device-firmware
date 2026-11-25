@@ -209,6 +209,9 @@ int board_prov_motion_verify(void)
     /* 104 Hz, +/-8 g, low-power accelerometer; gyro remains off. */
     if (!rc) rc = write_reg(0x10, 0x4c);
     uint8_t raw[6], ready;
+    /* Flush the retained sample from the previous ODR/full-scale before
+     * interpreting fresh +/-8 g values or establishing the gravity baseline. */
+    if (!rc) rc = i2c_burst_read_dt(&imu, 0x28, raw, sizeof(raw));
     struct prov_motion motion = {0};
     const uint16_t threshold_mg = ez_factory_shake_threshold_mg();
     bool accepted = false;
