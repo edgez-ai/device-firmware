@@ -32,6 +32,9 @@ static const struct pinctrl_dev_config *const imu_pins =
 	PINCTRL_DT_DEV_CONFIG_GET(DT_NODELABEL(i2c30));
 static unsigned int observed_mask, hardware_mask;
 static bool initialized;
+#if defined(CONFIG_EZ_DEV54_PROV_MOTION_SLEEP)
+static bool prov_orientation_event;
+#endif
 static volatile int last_imu_error, last_voltage_error;
 
 int board_sensors_error(void) { return last_imu_error ? last_imu_error : last_voltage_error; }
@@ -101,6 +104,13 @@ int board_sensors_init(void)
 	/* No ADC init/sample at boot. Clear inherited IMU ODR once, then park I2C.
 	 * No worker, FIFO drain or periodic interrupt is enabled while unobserved. */
 	rc = bus_start();
+#if defined(CONFIG_EZ_DEV54_PROV_MOTION_SLEEP)
+	/* Preserve the latched hardware cause before standby initialization clears
+	 * the 6D routing/latch. Gyro motion alone must never authorize BLE. */
+	uint8_t source = 0;
+	if (!rc) rc = i2c_reg_read_byte_dt(&imu, 0x1d, &source);
+	prov_orientation_event = !rc && (source & 0x40);
+#endif
 	if (!rc) rc = configure_imu();
 	int stop = bus_stop();
 	last_imu_error = rc ? rc : stop;
@@ -224,6 +234,8 @@ static int gyro_sample(int32_t mdps[3], int64_t deadline)
 }
 int board_prov_motion_verify(void)
 {
+    if (!prov_orientation_event) return 0;
+    prov_orientation_event = false;
     if (observed_mask) return -EBUSY;
     int rc = bus_start();
     if (!rc) rc = configure_imu();

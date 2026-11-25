@@ -49,6 +49,11 @@ nRF54 System OFF when `CONFIG_EZ_DEV54_PROV_MOTION_SLEEP=y`. HaLow and external
 UART-device power are switched off, signals are parked and the indicator is off.
 Normal saved/factory-provisioned operation and connected WNM are unchanged.
 
+The kernel system timer is disabled immediately before System OFF so pending
+kernel deadlines cannot periodically wake standby. Boot preserves and checks
+the IMU's latched 6D event before clearing its registers; a different System OFF
+wake cause cannot bypass the first stage.
+
 There are two successive checks, with no direct interrupt-to-BLE path:
 
 1. During System OFF only the accelerometer runs, at 26 Hz low power. Its

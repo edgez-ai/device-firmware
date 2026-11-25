@@ -6,6 +6,7 @@
 #include <zephyr/devicetree.h>
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/hwinfo.h>
+#include <zephyr/drivers/timer/system_timer.h>
 #include <zephyr/kernel.h>
 #include <zephyr/sys/poweroff.h>
 
@@ -48,6 +49,8 @@ int prov_power_sleep(void) {
             GPIO_ACTIVE_LOW) != 0);
   nrf_gpio_cfg_output(led);
   board_prov_motion_sense();
+  /* The kernel's GRTC compare must not periodically wake transport standby. */
+  sys_clock_disable();
   sys_poweroff();
   CODE_UNREACHABLE;
 }
