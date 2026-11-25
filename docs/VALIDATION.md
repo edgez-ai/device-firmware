@@ -617,3 +617,38 @@ The common radio/kernel heap reservation is unchanged.
   `artifacts/ez-dev54-hardware-memory/`.
 - Not flashed. Actual camera capture/transfer, radar operation and shared
   kernel-heap/stack high-water marks still require on-device testing.
+
+## LwM2M IMU wake — live validation, 2026-11-25
+
+GitHub Actions built and tested firmware commit `22206e6` (run
+`45592569712`). Downloaded artifact hashes matched; the configuration enabled
+IMU wake and ZMS settings, retained 256 KiB SRAM, and disabled logging/RTT.
+J-Link probe 607000398 programmed and verified the CI HEX, then reset/run.
+No local compilation was used.
+
+The HaLowLink 2 AP was upgraded to gateway commit `bb4dc06` from its successful
+CI IPK. Its UCI configuration checksum remained unchanged, the Hello World
+WASM module resumed, and the live model catalogue exposed resources 8..11.
+
+Live device checks passed:
+
+- Read/write configuration and rejection of mode 3, threshold 31 mg and angle
+  61 degrees.
+- Mode 2, threshold 750 mg and angle 70 degrees survived a real LwM2M Device
+  Reboot Execute.
+- Timer-only WNM returned success after 8000 ms with wake reason 1.
+- With orientation wake armed, an undisturbed cycle returned success after
+  8001 ms with wake reason 1, confirming timer fallback and IMU cleanup.
+- With a 180-second timer and 60-degree orientation threshold, the user
+  physically turned the device. It woke after 23179 ms with wake reason 3,
+  idle state and last result 0; subsequent network reads succeeded.
+
+Some first post-sleep REST reads timed out; subsequent reads recovered and
+returned the timings/results above. This test establishes functional wake and
+configuration persistence, not a current-consumption measurement or a new
+validation of unprovisioned transport-mode System OFF. Motion-mode hardware
+sensitivity was not physically exercised in this session.
+
+Test settings were restored to timer-only mode 0, 500 mg, 60 degrees and a
+60-second duration. The tested firmware remains on the device and the matching
+UI package remains on the AP.
