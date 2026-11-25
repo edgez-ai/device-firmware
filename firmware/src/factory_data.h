@@ -10,6 +10,6 @@ const char *ez_factory_ble_name(void);
 /* -1 for no valid hardware flag; base selection is handled by the caller. */
 int ez_factory_hardware(void);
 /* Read and validate the optional motion extension on each call. */
-uint16_t ez_factory_pose_delta_mg(void);
+uint16_t ez_factory_gyro_threshold_dps(void);
 uint8_t ez_factory_pose_angle_deg(void);
 #endif

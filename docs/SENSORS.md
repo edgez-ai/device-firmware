@@ -260,14 +260,16 @@ attempt twice encountered gateway REST timeouts; a later start/cancel cycle
 passed. This intermittent gateway behavior remains recorded rather than being
 claimed as resolved by the local clock change.
 
-## Unprovisioned posture wake
+## Unprovisioned transport standby
 
-The ODR-off and disconnected-IRQ policy above describes normal configured
-operation without active sensor observers. Unprovisioned System OFF uses a
-separate posture-wake policy: the accelerometer runs at 26 Hz low power, the
-gyroscope remains off, INT1/P0.02 wakes the MCU on a 6D orientation change, and a
-CRC-protected pre-sleep gravity vector resides in reserved retained SRAM.
-Bluetooth opens only after a settled two-axis change passes the three-second
-verification. See [BLE provisioning](BLE-PROVISIONING.md#battery-provisioning-timeout-and-posture-wake)
-for the default 500 mg delta, factory angle setting, retention cost and board
-validation requirements. No periodic MCU polling runs in System OFF.
+The normal ODR-off/disconnected-IRQ policy above applies to configured devices
+without active sensor observers. Unprovisioned System OFF instead leaves the
+accelerometer in 26 Hz low-power mode with a 6D orientation interrupt on P0.02;
+the gyroscope is off. An orientation wake starts a bounded, gyro-only
+verification: at least two axes must simultaneously exceed the factory angular
+rate threshold (30 degrees/second by default) for 100 ms within three seconds.
+Every verification exit turns the gyro off. Invalid gestures rearm accelerometer
+orientation wake; successful gestures open BLE provisioning. No periodic MCU
+polling, NVS write or application RAM retention is needed during System OFF.
+See [BLE provisioning](BLE-PROVISIONING.md#transport-standby-and-two-stage-provisioning-wake)
+for timings, factory settings and physical transport testing requirements.

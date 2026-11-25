@@ -58,9 +58,9 @@ def validate(record):
     password = text_field(record['password'], 63, 'WPA3 password')
     if bool(record['ssid']) != bool(password) or (password and len(password) < 8):
         raise ValueError('Factory Wi-Fi must be empty or include SSID and an 8–63-byte password')
-    threshold = record.get('pose_delta_mg')
-    if threshold is not None and (type(threshold) is not int or not 100 <= threshold <= 1000):
-        raise ValueError('Pose delta must be an integer between 100 and 1000 mg')
+    threshold = record.get('gyro_threshold_dps')
+    if threshold is not None and (type(threshold) is not int or not 5 <= threshold <= 180):
+        raise ValueError('Gyro threshold must be an integer between 5 and 180 degrees/second')
     angle = record.get('pose_interrupt_deg', 60)
     if type(angle) is not int or angle not in (50, 60, 70, 80):
         raise ValueError('Pose interrupt angle must be 50, 60, 70 or 80 degrees')
@@ -88,8 +88,8 @@ def decode(data):
         record['hardware'] = HARDWARE[mode]
     extension = data[MOTION_OFFSET:MOTION_OFFSET+16]
     magic, ver, size, mg, angle, reserved, crc = struct.unpack('<IHHHBBI', extension)
-    if (magic, ver, size) == (MOTION_MAGIC, 2, 16) and 100 <= mg <= 1000 and angle in (50, 60, 70, 80) and reserved == 0 and zlib.crc32(extension[:12]) == crc:
-        record['pose_delta_mg'] = mg
+    if (magic, ver, size) == (MOTION_MAGIC, 3, 16) and 5 <= mg <= 180 and angle in (50, 60, 70, 80) and reserved == 0 and zlib.crc32(extension[:12]) == crc:
+        record['gyro_threshold_dps'] = mg
         record['pose_interrupt_deg'] = angle
     return record
 
@@ -111,14 +111,14 @@ def encode(record, original=None):
             prefix = struct.pack('<IHHB3s', HARDWARE_MAGIC, 1, 16, HARDWARE.index(record['hardware']), bytes(3))
             extension = prefix + struct.pack('<I', zlib.crc32(prefix))
         page[HARDWARE_OFFSET:HARDWARE_OFFSET+16] = extension
-    if 'pose_delta_mg' in record or 'pose_interrupt_deg' in record:
+    if 'gyro_threshold_dps' in record or 'pose_interrupt_deg' in record:
         old = page[MOTION_OFFSET:MOTION_OFFSET+16]
         if old not in (bytes(16), b'\xff'*16) and struct.unpack('<I', old[:4])[0] != MOTION_MAGIC:
             raise ValueError('Motion extension overlaps unknown factory data')
-        if 'pose_delta_mg' in record and record['pose_delta_mg'] is None:
+        if 'gyro_threshold_dps' in record and record['gyro_threshold_dps'] is None:
             extension = b'\xff'*16
         else:
-            prefix = struct.pack('<IHHHBB', MOTION_MAGIC, 2, 16, record.get('pose_delta_mg', 500), record.get('pose_interrupt_deg', 60), 0)
+            prefix = struct.pack('<IHHHBB', MOTION_MAGIC, 3, 16, record.get('gyro_threshold_dps', 30), record.get('pose_interrupt_deg', 60), 0)
             extension = prefix + struct.pack('<I', zlib.crc32(prefix))
         page[MOTION_OFFSET:MOTION_OFFSET+16] = extension
     return bytes(page)
@@ -132,7 +132,7 @@ def ble_qr(record):
 def summary(record):
     # Never expose credentials, PoP or private key on stdout.
     return dict(serial=record['serial'], country=record['country'], channel=record['channel'],
-                factory_wifi=bool(record['ssid']), pose_delta_mg=record.get('pose_delta_mg') or 500, pose_interrupt_deg=record.get('pose_interrupt_deg', 60), hardware=record.get('hardware', 'base (default)'), public_key_sha256=hashlib.sha256(record['public_key']).hexdigest(),
+                factory_wifi=bool(record['ssid']), gyro_threshold_dps=record.get('gyro_threshold_dps') or 30, pose_interrupt_deg=record.get('pose_interrupt_deg', 60), hardware=record.get('hardware', 'base (default)'), public_key_sha256=hashlib.sha256(record['public_key']).hexdigest(),
                 ble_name=ble_qr(record)['name'])
 
 
@@ -208,8 +208,8 @@ def main():
         hardware.add_argument('--hardware', choices=HARDWARE)
         hardware.add_argument('--clear-hardware', action='store_true')
         motion = cmd.add_mutually_exclusive_group()
-        motion.add_argument('--pose-delta-mg', type=int, help='100–1000 mg; default 500 mg when absent')
-        motion.add_argument('--clear-pose-threshold', action='store_true')
+        motion.add_argument('--gyro-threshold-dps', type=int, help='5–180 degrees/second; default 30 when absent')
+        motion.add_argument('--clear-motion-threshold', action='store_true')
         cmd.add_argument('--pose-interrupt-deg', type=int, choices=(50,60,70,80))
         cmd.add_argument('--ssid')
         cmd.add_argument('--password-file', type=Path, help='UTF-8 WPA3 password file; never place secrets on the command line')
@@ -244,9 +244,9 @@ def main():
             if args.channel is not None: record['channel'] = args.channel
         if args.hardware is not None: record['hardware'] = args.hardware
         if args.clear_hardware: record['hardware'] = None
-        if args.pose_delta_mg is not None: record['pose_delta_mg'] = args.pose_delta_mg
-        if args.clear_pose_threshold:
-            record['pose_delta_mg'] = None
+        if args.gyro_threshold_dps is not None: record['gyro_threshold_dps'] = args.gyro_threshold_dps
+        if args.clear_motion_threshold:
+            record['gyro_threshold_dps'] = None
             record.pop('pose_interrupt_deg', None)
         if args.pose_interrupt_deg is not None: record['pose_interrupt_deg'] = args.pose_interrupt_deg
         if args.clear_wifi:

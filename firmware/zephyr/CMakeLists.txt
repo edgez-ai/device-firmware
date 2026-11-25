@@ -68,7 +68,6 @@ endif()
 
 if(EZ_DEV54_BLE_PROV)
   list(APPEND EXTRA_CONF_FILE "${CMAKE_CURRENT_LIST_DIR}/ble_prov.conf")
-  list(APPEND EXTRA_DTC_OVERLAY_FILE "${CMAKE_CURRENT_LIST_DIR}/prov_retained.overlay")
   list(APPEND EXTRA_DTC_OVERLAY_FILE "${CMAKE_CURRENT_LIST_DIR}/factory_data.overlay")
   if(RADAR_HALOW_CAMERA)
     list(APPEND EXTRA_DTC_OVERLAY_FILE "${CMAKE_CURRENT_LIST_DIR}/camera_uart_deferred.overlay")

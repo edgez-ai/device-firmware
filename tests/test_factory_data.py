@@ -60,12 +60,12 @@ class Tests(unittest.TestCase):
 
     def test_motion_extension(self):
         original = f.encode(self.sample())
-        self.assertEqual(f.summary(f.decode(original))['pose_delta_mg'], 500)
-        for mg in (100, 500, 1000):
-            record = self.sample(); record.update(hardware='camera', pose_delta_mg=mg, pose_interrupt_deg=60)
+        self.assertEqual(f.summary(f.decode(original))['gyro_threshold_dps'], 30)
+        for mg in (5, 30, 180):
+            record = self.sample(); record.update(hardware='camera', gyro_threshold_dps=mg, pose_interrupt_deg=60)
             page = f.encode(record, original)
             self.assertEqual(page[:211], original[:211])
-            self.assertEqual(f.decode(page)['pose_delta_mg'], mg)
+            self.assertEqual(f.decode(page)['gyro_threshold_dps'], mg)
             self.assertEqual(f.decode(page)['hardware'], 'camera')
             self.assertEqual(f.ble_qr(record), f.ble_qr(self.sample()))
             threshold = ctypes.c_uint16(0); angle = ctypes.c_uint8(0)
@@ -74,28 +74,36 @@ class Tests(unittest.TestCase):
             self.assertEqual(angle.value, 60)
             for offset in (272, 276, 278, 280, 282, 284):
                 corrupt = bytearray(page); corrupt[offset] ^= 1
-                self.assertNotIn('pose_delta_mg', f.decode(corrupt))
+                self.assertNotIn('gyro_threshold_dps', f.decode(corrupt))
                 self.assertLess(self.lib.ez_factory_motion_parse(ctypes.create_string_buffer(bytes(corrupt)), len(page), ctypes.byref(threshold), ctypes.byref(angle)), 0)
             updated = f.decode(page); updated['country'] = 'EU'
             self.assertEqual(f.encode(updated, page)[272:288], page[272:288])
-            updated['pose_delta_mg'] = None
+            updated['gyro_threshold_dps'] = None
             cleared = f.encode(updated, page)
-            self.assertNotIn('pose_delta_mg', f.decode(cleared))
+            self.assertNotIn('gyro_threshold_dps', f.decode(cleared))
             self.assertEqual(cleared[256:272], page[256:272])
+        # A valid old acceleration-delta extension must not become a gyro rate.
+        legacy = bytearray(page)
+        legacy[276:278] = f.struct.pack('<H', 2)
+        legacy[280:282] = f.struct.pack('<H', 500)
+        legacy[284:288] = f.struct.pack('<I', f.zlib.crc32(legacy[272:284]))
+        self.assertNotIn('gyro_threshold_dps', f.decode(legacy))
+        self.assertEqual(f.summary(f.decode(legacy))['gyro_threshold_dps'], 30)
         threshold = ctypes.c_uint16(0); angle = ctypes.c_uint8(0)
+        self.assertLess(self.lib.ez_factory_motion_parse(ctypes.create_string_buffer(bytes(legacy)), len(legacy), ctypes.byref(threshold), ctypes.byref(angle)), 0)
         self.assertLess(self.lib.ez_factory_motion_parse(ctypes.create_string_buffer(original), len(original), ctypes.byref(threshold), ctypes.byref(angle)), 0)
-        for invalid in (0, 99, 1001, True, 500.5):
-            record = self.sample(); record['pose_delta_mg'] = invalid
+        for invalid in (0, 4, 181, True, 30.5):
+            record = self.sample(); record['gyro_threshold_dps'] = invalid
             with self.assertRaises(ValueError): f.encode(record)
         for degrees in (50,60,70,80):
             record = self.sample(); record['pose_interrupt_deg'] = degrees
             page = f.encode(record, original)
             self.assertEqual(f.decode(page)['pose_interrupt_deg'], degrees)
-            self.assertEqual(f.decode(page)['pose_delta_mg'], 500)
+            self.assertEqual(f.decode(page)['gyro_threshold_dps'], 30)
         record['pose_interrupt_deg'] = 45
         with self.assertRaises(ValueError): f.encode(record)
         occupied = bytearray(original); occupied[272:288] = b'unknown-layout!!'
-        record = self.sample(); record['pose_delta_mg'] = 1000
+        record = self.sample(); record['gyro_threshold_dps'] = 30
         with self.assertRaises(ValueError): f.encode(record, occupied)
 
     def test_v2_interoperability_and_wifi(self):

@@ -11,9 +11,9 @@
 #define EZ_FACTORY_HARDWARE_SIZE 16U
 #define EZ_FACTORY_MOTION_OFFSET 272U
 #define EZ_FACTORY_MOTION_SIZE 16U
-#define EZ_FACTORY_POSE_DEFAULT_MG 500U
-#define EZ_FACTORY_POSE_MIN_MG 100U
-#define EZ_FACTORY_POSE_MAX_MG 1000U
+#define EZ_FACTORY_GYRO_DEFAULT_DPS 30U
+#define EZ_FACTORY_GYRO_MIN_DPS 5U
+#define EZ_FACTORY_GYRO_MAX_DPS 180U
 /* Compatible with template-offgrid-tracker's CRC-protected v2 record. */
 struct ez_factory_data {
   char serial[33], country[3], ssid[33], password[65];

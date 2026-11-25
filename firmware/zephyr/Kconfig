@@ -90,8 +90,6 @@ config EZ_DEV54_PROV_MOTION_SLEEP
 	bool "System OFF after uncompleted provisioning; IMU orientation to reopen BLE"
 	depends on EZ_DEV54_BLE_PROV && EZ_DEV54_SENSORS
 	select POWEROFF
-	select RETAINED_MEM
-	select CRC
 	default y
 
 config EZ_DEV54_PROV_SUCCESS_GRACE_SECONDS

@@ -1,62 +1,60 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #include "prov_motion.h"
 #include <assert.h>
+#include <limits.h>
 #include <stdio.h>
 static bool feed(struct prov_motion *s, unsigned t, int x, int y, int z,
-                 int threshold) {
+                 unsigned threshold) {
   int32_t axes[] = {x, y, z};
   return prov_motion_sample(s, t, axes, threshold);
 }
-static void start(struct prov_motion *s, unsigned now) {
-  const int32_t reference[] = {0, 0, 1000};
-  prov_motion_init(s, reference, now);
-}
 int main(void) {
   struct prov_motion s;
-  start(&s, 0);
+  prov_motion_init(&s, 0);
   for (unsigned t = 0; t < 3000; t += 40)
-    assert(!feed(&s, t, 0, 0, 1000, 500));
-  /* A slow 60-degree tilt changes X by 0.866 g and Z by 0.5 g.
-   * Hold it, no shaking/gyroscope required. */
-  start(&s, 0);
-  for (unsigned t = 0; t < 340; t += 40)
-    assert(!feed(&s, t, 866, 0, 500, 500));
-  assert(feed(&s, 520, 866, 0, 500, 500));
-  start(&s, 0);
-  for (unsigned t = 0; t < 340; t += 40)
-    assert(!feed(&s, t, -866, 0, 500, 500));
-  assert(feed(&s, 520, -866, 0, 500, 500));
-  /* Changing only one component, one short impact, and free fall fail. */
-  start(&s, 0);
-  for (unsigned t = 0; t < 3000; t += 40)
-    assert(!feed(&s, t, 600, 0, 800, 500));
-  start(&s, 0);
-  assert(!feed(&s, 100, 866, 0, 500, 500));
-  for (unsigned t = 140; t < 3000; t += 40)
-    assert(!feed(&s, t, 0, 0, 1000, 500));
-  start(&s, 0);
-  for (unsigned t = 0; t < 3000; t += 40)
-    assert(!feed(&s, t, 0, 0, 0, 500));
-  start(&s, 0);
-  for (unsigned t = 0; t < 3000; t += 40)
-    assert(!feed(&s, t, 2000, 2000, 1000, 500));
-  /* Different axes at different instants must not be accumulated. */
-  start(&s, 0);
-  for (unsigned t = 0; t < 3000; t += 40)
-    assert(!feed(&s, t, (t / 40) % 2 ? 600 : 0, (t / 40) % 2 ? 0 : 600, 800,
-                 500));
-  start(&s, 0);
-  for (unsigned t = 0; t < 500; t += 40)
-    assert(!feed(&s, t, 866, 0, 500, 1000));
-  /* A 90-degree tilt can meet a stricter 1 g factory setting. */
-  start(&s, 0);
-  for (unsigned t = 0; t < 340; t += 40)
-    assert(!feed(&s, t, 1000, 0, 0, 1000));
-  assert(feed(&s, 520, 1000, 0, 0, 1000));
-  start(&s, 0);
-  assert(!feed(&s, 3000, 866, 0, 500, 500));
-  start(&s, UINT32_MAX - 100);
-  assert(!feed(&s, 3000, 866, 0, 500, 500));
-  puts("PASS: settled two-axis posture changes; reject gravity, single-axis "
-       "changes, shocks, free fall, acceleration and expired verification");
+    assert(!feed(&s, t, 0, 0, 0, 30));
+  /* Fresh gyro startup spikes do not count. Opposite directions do. */
+  prov_motion_init(&s, 0);
+  assert(!feed(&s, 0, 200000, 200000, 0, 30));
+  assert(!feed(&s, 180, 200000, 200000, 0, 30));
+  assert(!feed(&s, 200, 40000, -40000, 0, 30));
+  assert(!feed(&s, 240, 40000, -40000, 0, 30));
+  assert(!feed(&s, 280, 40000, -40000, 0, 30));
+  assert(feed(&s, 320, 40000, -40000, 0, 30));
+  /* Strictly greater than 30 dps on two axes is required. */
+  prov_motion_init(&s, 0);
+  for (unsigned t = 200; t < 3000; t += 40)
+    assert(!feed(&s, t, 30000, -30000, 0, 30));
+  prov_motion_init(&s, 0);
+  for (unsigned t = 200; t < 3000; t += 40)
+    assert(!feed(&s, t, 200000, 0, 0, 30));
+  prov_motion_init(&s, 0);
+  for (unsigned t = 200; t < 3000; t += 40)
+    assert(!feed(&s, t, (t / 40) % 2 ? 40000 : 0, (t / 40) % 2 ? 0 : 40000, 0,
+                 30));
+  /* One short two-axis impact, or separate spikes, cannot accumulate. */
+  prov_motion_init(&s, 0);
+  assert(!feed(&s, 200, 100000, 100000, 0, 30));
+  assert(!feed(&s, 240, 0, 0, 0, 30));
+  assert(!feed(&s, 280, 100000, 100000, 0, 30));
+  assert(!feed(&s, 320, 0, 0, 0, 30));
+  /* A missing sample interval breaks continuity. */
+  prov_motion_init(&s, 0);
+  assert(!feed(&s, 200, 40000, 40000, 0, 30));
+  assert(!feed(&s, 400, 40000, 40000, 0, 30));
+  assert(!feed(&s, 440, 40000, 40000, 0, 30));
+  assert(!feed(&s, 480, 40000, 40000, 0, 30));
+  assert(feed(&s, 520, 40000, 40000, 0, 30));
+  prov_motion_init(&s, 0);
+  for (unsigned t = 200; t < 1000; t += 40)
+    assert(!feed(&s, t, 40000, 40000, 0, 50));
+  prov_motion_init(&s, 0);
+  assert(!feed(&s, 3000, 100000, 100000, 0, 30));
+  prov_motion_init(&s, UINT32_MAX - 100);
+  assert(!feed(&s, 3000, 100000, 100000, 0, 30));
+  prov_motion_init(&s, 0);
+  assert(!feed(&s, 200, INT_MIN, INT_MIN, 0, 30));
+  assert(!feed(&s, 240, INT_MIN, INT_MIN, 0, 0));
+  puts("PASS: gyro startup guard, two-axis rate confirmation, strict "
+       "threshold, spike/gap rejection and deadline");
 }
