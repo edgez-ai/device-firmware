@@ -1,0 +1,16 @@
+diff --git a/halow/CMakeLists.txt b/halow/CMakeLists.txt
+index ca651b7..19f74f0 100644
+--- a/halow/CMakeLists.txt
++++ b/halow/CMakeLists.txt
+@@ -138,6 +138,11 @@ if(CONFIG_HALOW_MESH_MODE AND NOT CONFIG_DAB_RAW_RF_TEST)
+ 
+ endif()
+ 
++# EZ-DEV01 station adapter
++if(NOT CONFIG_HALOW_MESH_MODE AND NOT CONFIG_DAB_RAW_RF_TEST)
++    list(APPEND src "${CMAKE_CURRENT_LIST_DIR}/mmhalow.c")
++endif()
++
+ idf_component_register(
+ 	INCLUDE_DIRS
+ 	${inc}

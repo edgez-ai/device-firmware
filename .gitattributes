@@ -1,0 +1,3 @@
+# Keep imported vendor formatting and unified patch context verbatim.
+firmware/esp32/shared/nanopb/** -whitespace
+*.patch -whitespace

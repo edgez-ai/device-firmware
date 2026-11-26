@@ -1,6 +1,6 @@
 # Third-party and component license notices
 
-EZ-DEV54's root [LICENSE](LICENSE) contains Apache-2.0. Dependencies and
+Device firmware's root [LICENSE](LICENSE) contains Apache-2.0. Dependencies and
 separately licensed components remain governed by their own license terms,
 copyright notices and file-level SPDX identifiers. This notice identifies
 the following components; it does not relicense them or replace their terms.
@@ -58,3 +58,14 @@ Other dependency notices remain applicable, including the Apache-2.0
 MM-IoT Zephyr integration and the Wakaama license files and
 [NOTICE](third_party/wakaama/NOTICE.md). Preserve the applicable notices when
 distributing source, libraries or firmware containing those components.
+
+## Offgrid Tracker ESP32 application
+
+The ESP32 application and generated common protocol definitions were imported
+from `edgez-ai/template-offgrid-tracker` at commit `0a54dbe`. Original source
+notices are retained under Apache-2.0. See `firmware/esp32/SOURCE.md`.
+
+The bundled nanopb runtime in `firmware/esp32/shared/nanopb` retains its
+zlib license in that directory's `LICENSE.txt`. Vendor SDK and RF dependencies
+under `firmware/esp32/platforms/esp-halow` retain their own licenses and the
+same boundaries described above; see `FIRMWARE-LICENSING.md`.

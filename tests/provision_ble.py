@@ -110,6 +110,13 @@ async def main(args):
             result = await exchange("prov-scan", request, pb.WiFiScanPayload)
             print("Scan finished:", result.resp_scan_status.scan_finished,
                   "AP count:", result.resp_scan_status.result_count, flush=True)
+        if args.device_name:
+            data = security.encrypt_data(json.dumps({"deviceName": args.device_name}).encode())
+            await client.write_gatt_char(endpoints["mqtt-config"], data, response=True)
+            result = json.loads(security.decrypt_data(bytes(await client.read_gatt_char(endpoints["mqtt-config"]))))
+            if not result.get("ok") or not result.get("persisted"):
+                raise RuntimeError("Device name was not persisted")
+            print("Device name persisted over the encrypted mqtt-config endpoint", flush=True)
         pb = proto.wifi_config_pb2
         request = pb.WiFiConfigPayload(msg=2)
         request.cmd_set_config.ssid = ssid.encode()
@@ -142,6 +149,7 @@ if __name__ == "__main__":
     parser.add_argument("--pop-config", type=Path, default=ROOT / "firmware/zephyr/provisioning-secrets.conf")
     parser.add_argument("--wifi-config", type=Path, default=ROOT / "firmware/zephyr/halowlink2-secrets.conf")
     parser.add_argument("--scan", action="store_true")
+    parser.add_argument("--device-name", help="Optional name to persist through the existing encrypted mqtt-config endpoint")
     parser.add_argument("--check-only", action="store_true", help="Authenticate without changing Wi-Fi credentials")
     try:
         asyncio.run(main(parser.parse_args()))

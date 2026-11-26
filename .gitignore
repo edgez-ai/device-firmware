@@ -6,3 +6,6 @@ __pycache__/
 *.pyc
 .DS_Store
 firmware/zephyr/provisioning-secrets.conf
+
+# Private hardware identities, original flash and local extraction backups.
+/.device-backups/

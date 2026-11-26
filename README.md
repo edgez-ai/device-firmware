@@ -1,4 +1,17 @@
-# EZ-DEV54
+# Device firmware
+
+Independent firmware for EdgeZ devices.
+
+| Device | Project | Default image |
+| --- | --- | --- |
+| EZ-DEV54 / nRF54L15 | `firmware/` | `ez-dev54` |
+| EZ-DEV01 / HT-HC33 ESP32-S3 | `firmware/esp32/` | `ez-dev01` |
+
+The nRF54L15 project remains in its original location. ESP32 source was extracted
+from Offgrid Tracker; the mobile application remains in that separate repository.
+See [HT-HC33 build, provisioning and companion behavior](firmware/esp32/README.md).
+
+## EZ-DEV54
 
 nRF54L15 + FGH200M/MM8108 Wi-Fi HaLow development firmware with base,
 VC0706 camera, IWRL6432 radar and L76K GPS runtime modes.

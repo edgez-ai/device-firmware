@@ -5,3 +5,6 @@
 [submodule "third_party/wakaama"]
 	path = third_party/wakaama
 	url = https://github.com/edgez-ai/wakaama.git
+[submodule "firmware/esp32/platforms/esp-halow"]
+	path = firmware/esp32/platforms/esp-halow
+	url = https://github.com/edgez-ai/esp-halow.git

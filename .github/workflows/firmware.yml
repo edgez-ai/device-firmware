@@ -53,6 +53,16 @@ jobs:
           cp firmware/.pio/build/ez-dev54/firmware.hex artifacts/
           cp firmware/.pio/build/ez-dev54/firmware.elf artifacts/
           cp firmware/.pio/build/ez-dev54/zephyr/.config artifacts/zephyr.config
+          mkdir -p artifacts/licenses
+          cp FIRMWARE-LICENSING.md THIRD-PARTY-NOTICES.md artifacts/
+          cp LICENSE artifacts/licenses/DEVICE-FIRMWARE-APACHE-2.0
+          cp third_party/wakaama/LICENSE artifacts/licenses/WAKAAMA-LICENSE
+          cp firmware/platforms/mm-iot-zephyr/submodules/mm-iot-sdk/LICENSES/* artifacts/licenses/
+          cp firmware/platforms/mm-iot-zephyr/submodules/edgez-halow-mesh-prebuilt/licenses/* artifacts/licenses/
+          cp firmware/platforms/mm-iot-zephyr/submodules/morse-firmware/firmware/LICENSE artifacts/licenses/MORSE-FIRMWARE-BDL
+          cp firmware/platforms/mm-iot-zephyr/submodules/morse-firmware/bcf/morsemicro/LICENSE artifacts/licenses/MORSE-BCF-BDL
+          git rev-parse HEAD > artifacts/SOURCE-MANIFEST.txt
+          git submodule status --recursive >> artifacts/SOURCE-MANIFEST.txt
           cd artifacts
           sha256sum firmware.hex firmware.elf zephyr.config > SHA256SUMS
       - uses: actions/upload-artifact@v4

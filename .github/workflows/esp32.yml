@@ -1,0 +1,57 @@
+name: Build HT-HC33 firmware
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, 'codex/ht-hc33-independent']
+    paths: ['firmware/esp32/**', 'firmware/src/**', 'third_party/wakaama', '.github/workflows/esp32.yml', '.github/scripts/**']
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  esp32:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install PlatformIO
+        run: python -m pip install platformio==6.1.19 -r tests/requirements.txt
+      - name: Build BLE-provisioned station
+        run: pio run -d firmware/esp32 -e ez-dev01
+      - name: Build retained legacy sensor
+        run: pio run -d firmware/esp32 -e ht-hc33-sensor
+      - name: Check factory, provisioning and companion codecs
+        run: |
+          python3 tests/test_factory_data.py
+          python3 tests/test_esp_prov.py
+          python3 tests/test_companion.py
+          python3 .github/scripts/check-firmware-compliance.py
+      - name: Package test firmware and notices
+        shell: bash
+        run: |
+          set -euo pipefail
+          output=artifacts/ez-dev01
+          platform=firmware/esp32/platforms/esp-halow/halow/components
+          mkdir -p "$output/licenses"
+          cp firmware/esp32/.pio/build/ez-dev01/{firmware.bin,firmware.elf,bootloader.bin,partitions.bin,ota_data_initial.bin} "$output/"
+          cp FIRMWARE-LICENSING.md firmware/esp32/{README.md,SOURCE.md} "$output/"
+          cp LICENSE "$output/licenses/DEVICE-FIRMWARE-APACHE-2.0"
+          cp firmware/esp32/shared/nanopb/LICENSE.txt "$output/licenses/NANOPB-LICENSE"
+          cp "$platform/mm-iot-sdk/LICENSES/"* "$output/licenses/"
+          cp "$platform/edgez-halow-mesh-prebuilt/licenses/"* "$output/licenses/"
+          cp "$platform/firmware/morse-firmware/firmware/LICENSE" "$output/licenses/MORSE-FIRMWARE-BDL"
+          cp "$platform/firmware/morse-firmware/bcf/morsemicro/LICENSE" "$output/licenses/MORSE-BCF-BDL"
+          cp third_party/wakaama/LICENSE "$output/licenses/WAKAAMA-LICENSE"
+          git rev-parse HEAD > "$output/SOURCE-MANIFEST.txt"
+          git submodule status --recursive >> "$output/SOURCE-MANIFEST.txt"
+          sha256sum firmware/esp32/patches/*.patch >> "$output/SOURCE-MANIFEST.txt"
+          (cd "$output" && sha256sum *.bin *.elf > SHA256SUMS)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ez-dev01-${{ github.sha }}
+          path: artifacts/ez-dev01/
+          retention-days: 7
