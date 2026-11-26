@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #include "dev01.h"
+#include "dev01_diag.h"
 #include "dev01_network.h"
 #include "esp_app_desc.h"
 #include "esp_log.h"
@@ -191,11 +192,13 @@ static void client_task(void *arg) {
                                .readFunc = read_device};
     lwm2m_object_t *objects[] = {
         get_security_object(1, uri, NULL, NULL, 0, false),
-        get_server_object(1, "U", 300, false), &device, &hardware};
+        get_server_object(1, "U", 300, false), &device, &hardware,
+        dev01_diag_object()};
     lwm2m_context_t *context = lwm2m_init(&session);
-    bool ready = context && objects[0] && objects[1] &&
-                 lwm2m_configure(context, dev01_identity.serial, NULL, NULL, 4,
-                                 objects) == 0;
+    bool ready =
+        context && objects[0] && objects[1] &&
+        lwm2m_configure(context, dev01_identity.serial, NULL, NULL,
+                        sizeof(objects) / sizeof(objects[0]), objects) == 0;
     while (ready) {
       if (current_server(netif) != session.server.sin_addr.s_addr)
         break;
@@ -236,6 +239,7 @@ static void client_task(void *arg) {
   }
 }
 void dev01_lwm2m_start(void) {
+  dev01_diag_start();
   if (xTaskCreate(client_task, "lwm2m", 8192, NULL, 4, NULL) != pdPASS)
     abort();
 }

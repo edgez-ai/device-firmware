@@ -7,7 +7,7 @@ endif()
 set(common "${CMAKE_CURRENT_LIST_DIR}/../../src")
 set(wakaama "${CMAKE_CURRENT_LIST_DIR}/../../../third_party/wakaama")
 file(GLOB wakaama_sources CONFIGURE_DEPENDS "${wakaama}/core/*.c" "${wakaama}/data/*.c" "${wakaama}/coap/*.c" "${wakaama}/coap/er-coap-13/*.c")
-idf_component_register(SRCS "dev01_main.c" "dev01_ble.c" "dev01_lwm2m.c" "dev01_scan.c" "edgez_esp_factory_data.c"
+idf_component_register(SRCS "dev01_main.c" "dev01_ble.c" "dev01_lwm2m.c" "dev01_scan.c" "dev01_diag.c" "dev01_diag_format.c" "edgez_esp_factory_data.c"
  "${common}/factory_record.c" "${common}/prov_protocol.c" "${common}/companion_protocol.c" ${wakaama_sources}
  "${wakaama}/examples/client/common/object_security.c" "${wakaama}/examples/client/common/object_server.c"
  INCLUDE_DIRS "include" "${common}" "${wakaama}/include" "${wakaama}/core" "${wakaama}/coap" "${wakaama}/examples/client/common"

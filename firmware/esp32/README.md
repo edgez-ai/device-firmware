@@ -42,6 +42,15 @@ the new onboarding behavior.
   Factory identity, keys and unrelated settings remain intact. Factory Wi-Fi,
   if present, retains precedence and is never removed by this action.
 
+## Radio power saving
+
+The default station image enables HaLow power saving with a listen interval of
+10 beacons. The AP supplies the DTIM period; use DTIM 10 on the Jetson AP for
+the matching schedule (about one second with a 100 TU beacon interval).
+BUSY/GPIO7 and WAKE/GPIO9 use the HC33 wiring. This saves radio power while
+the provisioned MCU continues serving LwM2M; unprovisioned companion connections
+still keep the MCU awake.
+
 ## Local LwM2M
 
 After DHCP, the client uses the current HaLow gateway at UDP port 5683.
@@ -68,3 +77,21 @@ and retains the HC33 reset-safe GPIO implementation.
 
 See the repository's [firmware licensing notice](../../FIRMWARE-LICENSING.md).
 Vendor blobs, RF libraries, Wakaama and their notices retain their licenses.
+
+### Remote power-save diagnostics
+
+Read `/3347/0/5750` on the existing serial-number LwM2M client. The
+`v1 idle` report includes requested radio power save (`ps_req`), listen interval
+(`li`), station state, cached RSSI, restart/drop counters and GPIO samples.
+`wake`, `busy`, `irqlow`, and `quiet` are basis points (10000 = 100%);
+-1 means there were no samples. `quiet` means WAKE and BUSY are low and
+active-low IRQ is inactive. These are GPIO-state samples during CPU0 idle,
+not electrical current measurements or firmware sleep counters. IRQ may remain
+low while the transceiver sleeps, so `quiet` is only the strict combination
+of pin levels; use WAKE/BUSY activity and AP station power-save status together
+when assessing sleep behavior. The sampler
+uses existing idle entries without a polling timer or SPI transactions.
+Each read resets the sampling window; allow 20–30 seconds between reads.
+The read itself generates radio traffic. AP DTIM must be verified on the AP;
+`li=10` reports the station configuration, not a measured AP DTIM.
+Object 3347 also exposes USER button state (5500) and volatile press count (5501).

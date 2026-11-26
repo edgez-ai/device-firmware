@@ -24,3 +24,6 @@ CONFIG_BT_NIMBLE_HOST_TASK_STACK_SIZE=8192
 # HaLow is the station radio; do not link ESP32 2.4 GHz Wi-Fi/supplicant.
 CONFIG_ESP_WIFI_ENABLED=n
 CONFIG_ESP_HOST_WIFI_ENABLED=n
+
+# Follow the AP DTIM schedule using the HC33 BUSY/WAKE wiring.
+CONFIG_HALOW_PS_MODE=y

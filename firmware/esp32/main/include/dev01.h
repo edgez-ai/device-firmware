@@ -31,3 +31,6 @@ void dev01_scan_status(void *user, bool *done, uint32_t *count);
 int dev01_scan_result(void *user, uint32_t index, struct prov_ap *ap);
 
 bool dev01_companion_available(void);
+
+bool dev01_power_save_requested(void);
+uint32_t dev01_button_presses(void);

@@ -26,7 +26,8 @@ edgez_esp_factory_identity_t dev01_identity;
 static dev01_wifi_t active;
 static char model[33] = "EZ-DEV01";
 static char name[129], pop[33], address[16];
-static bool committed, attempting, radio_ready;
+static bool committed, attempting, radio_ready, power_save_requested;
+static uint32_t button_presses;
 static unsigned state = 2;
 static SemaphoreHandle_t lock, radio_lock;
 static QueueHandle_t requests;
@@ -54,6 +55,13 @@ bool dev01_companion_available(void) {
   bool result = !committed && !attempting;
   xSemaphoreGive(lock);
   return result;
+}
+bool dev01_power_save_requested(void) { return power_save_requested; }
+uint32_t dev01_button_presses(void) {
+  xSemaphoreTake(lock, portMAX_DELAY);
+  uint32_t count = button_presses;
+  xSemaphoreGive(lock);
+  return count;
 }
 void dev01_wifi_status(unsigned *value, char ip[16]) {
   xSemaphoreTake(lock, portMAX_DELAY);
@@ -108,6 +116,17 @@ esp_err_t dev01_radio_acquire(void) {
       rc = ESP_ERR_INVALID_ARG;
     if (!rc)
       rc = mmhalow_init(NULL);
+#if CONFIG_HALOW_PS_MODE
+    if (!rc && mmwlan_set_listen_interval(10) != MMWLAN_SUCCESS)
+      rc = ESP_FAIL;
+    if (!rc && mmwlan_set_power_save_mode(MMWLAN_PS_ENABLED) != MMWLAN_SUCCESS)
+      rc = ESP_FAIL;
+    if (!rc)
+      power_save_requested = true;
+    if (!rc)
+      ESP_LOGI(TAG, "HaLow power save enabled; listen interval 10 beacons (AP "
+                    "DTIM controls wake schedule)");
+#endif
     if (!rc)
       radio_ready = true;
   }
@@ -210,7 +229,14 @@ static void button_task(void *arg) {
     vTaskDelay(pdMS_TO_TICKS(50));
   unsigned held = 0;
   for (;;) {
-    held = gpio_get_level(GPIO_NUM_0) ? 0 : held + 1;
+    bool pressed = !gpio_get_level(GPIO_NUM_0);
+    if (pressed && !held) {
+      xSemaphoreTake(lock, portMAX_DELAY);
+      if (button_presses < UINT32_MAX)
+        button_presses++;
+      xSemaphoreGive(lock);
+    }
+    held = pressed ? held + 1 : 0;
     if (held >= 100) {
       while (!gpio_get_level(GPIO_NUM_0))
         vTaskDelay(pdMS_TO_TICKS(50));
