@@ -27,6 +27,7 @@
 #include "halow_sta.h"
 #if defined(CONFIG_EZ_DEV54_UART_GPS)
 #include "halow_gps.h"
+#include "gps_execute.h"
 #endif
 #if defined(CONFIG_EZ_DEV54_CONNECTION_WATCHDOG)
 #include "halow_connection.h"
@@ -623,6 +624,7 @@ static void run(void *unused1, void *unused2, void *unused3)
 		if (halow_sleep_pending() || halow_sleep_active()) {
 #if defined(CONFIG_EZ_DEV54_UART_GPS)
 			(void)halow_gps_step(ctx, false);
+			gps_execute_step(ctx);
 #endif
 #if defined(CONFIG_EZ_DEV54_SENSORS)
 			(void)halow_sensors_step(NULL);
@@ -673,6 +675,7 @@ static void run(void *unused1, void *unused2, void *unused3)
 		if (generation != active || reset_context) {
 #if defined(CONFIG_EZ_DEV54_UART_GPS)
 			(void)halow_gps_step(NULL, false);
+			gps_execute_step(NULL);
 #endif
 			if (link.fd >= 0) zsock_close(link.fd);
 			link.fd = -1;
@@ -739,6 +742,7 @@ static void run(void *unused1, void *unused2, void *unused3)
 		gps_allow = gps_allow && !halow_sleep_pending();
 #endif
 		int gps_wait = halow_gps_step(ctx, gps_allow);
+		gps_execute_step(ctx);
 #endif
 
 #if defined(CONFIG_EZ_DEV54_SENSORS)

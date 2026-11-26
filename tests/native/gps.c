@@ -72,6 +72,18 @@ int main(int argc, char **argv) {
     assert(!gps_nmea_fix("$GPRMC*00junk",&fix));
     lwm2m_context_t ctx={0};
     assert(halow_gps_init()==0 && !powered);
+    if (argc > 1 && !strcmp(argv[1], "execute-args")) {
+        const char *bad[] = {"0=9", "0=601", "0=abc", "1=300", "0=300,1", "0=-10", "0='295", "0='2'", "0='601'"};
+        for (size_t i=0;i<sizeof(bad)/sizeof(*bad);++i)
+            assert(halow_gps_control.executeFunc(&ctx,0,0,(uint8_t *)bad[i],strlen(bad[i]),&halow_gps_control)==COAP_400_BAD_REQUEST);
+        assert(halow_gps_control.executeFunc(&ctx,0,0,(uint8_t *)"0='295'",7,&halow_gps_control)==COAP_204_CHANGED);
+        assert(halow_gps_step(&ctx,true)==295000 && powered);
+        assert(control(&ctx,1)==120); /* Per-request timeout leaves the RW default alone. */
+        int result;assert(!halow_gps_result(&fix,&result));
+        now=295000;assert(halow_gps_step(&ctx,true)==-1 && !powered);
+        assert(halow_gps_result(&fix,&result) && result==-ETIMEDOUT);
+        puts("Per-request Execute timeout validation and nonblocking result passed");return 0;
+    }
     if (argc > 1) {
         /* A failed attempt must not consume the first successful fix hold. */
         assert(timeout(&ctx,10)==COAP_204_CHANGED);

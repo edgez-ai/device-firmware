@@ -26,6 +26,18 @@ class Gps(unittest.TestCase):
                 with self.subTest(case=case):
                     subprocess.run([str(binary), str(case)], check=True)
 
+    def test_deferred_execute_transport(self):
+        with tempfile.TemporaryDirectory() as folder:
+            binary = Path(folder) / 'gps-execute'
+            subprocess.run(['cc', '-std=c11', '-Wall', '-Wextra', '-Werror',
+                '-fsanitize=address,undefined', '-DLWM2M_CLIENT_MODE', '-DCONFIG_EZ_DEV54_UART_GPS=1',
+                '-I'+str(ROOT/'tests/native'), '-I'+str(ROOT/'firmware/src'),
+                '-I'+str(ROOT/'third_party/wakaama/include'), '-I'+str(ROOT/'third_party/wakaama/core'),
+                '-I'+str(ROOT/'third_party/wakaama/coap'),
+                str(ROOT/'firmware/src/gps_execute.c'), str(ROOT/'tests/native/gps_execute.c'),
+                '-lm', '-o', str(binary)], check=True)
+            subprocess.run([str(binary)], check=True)
+
     def test_on_demand_lifecycle(self):
         with tempfile.TemporaryDirectory() as folder:
             binary = Path(folder) / 'gps'
@@ -36,7 +48,7 @@ class Gps(unittest.TestCase):
                             '-I'+str(ROOT/'third_party/wakaama/include'),
                             str(ROOT/'firmware/src/halow_gps.c'), str(ROOT/'firmware/src/gps_nmea.c'),
                             str(ROOT/'tests/native/gps.c'), '-lm', '-o', str(binary)], check=True)
-            for args in ([], ['hold-cancel'], ['hold-error']):
+            for args in ([], ['hold-cancel'], ['hold-error'], ['execute-args']):
                 with self.subTest(args=args):
                     subprocess.run([str(binary), *args], check=True)
 

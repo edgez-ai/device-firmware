@@ -125,6 +125,22 @@ and acquisition state. Location reads return CoAP 5.03 before the first fix.
 Reading or observing the cached location never starts the receiver. Fixes are
 RAM-only and cleared on boot. Altitude, accuracy and speed are not reported.
 
+For a single-request fresh location, Execute `/31028/0/0` with text/plain
+argument `0='295'`. Argument 0 selects a per-request acquisition timeout (10–600
+seconds), leaving the RW timeout resource unchanged. This opts into a separate
+CoAP response: the device sends an empty ACK for a confirmable request, continues
+servicing the event loop, then sends a confirmable 2.04 with JSON text
+`{"latitude":59.3,"longitude":18.1,"timestamp":1795668500}`. The original token
+is preserved; duplicate request packets cannot restart acquisition. Failures
+return a separate 5.03 with an error/result body. Empty Execute keeps its legacy
+immediate 2.04 response. No new resource or REST endpoint is added.
+
+The gateway forwards Execute payloads as `content: {format: 0, value: "..."}`.
+Use REST `timeout=300` with device timeout 295 to leave time for delivery. The
+fix response is sent immediately even during the first-fix 60-second hold.
+Cancelling the app's HTTP wait does not cancel an already accepted acquisition;
+the device timeout, WNM sleep, and context loss still bound its lifetime.
+
 Location object 6 is standard LwM2M. Object 31028 is an EdgeZ vendor object,
 not an OMA-registered identifier. Its UI model is supplied in
 [`lwm2m/31028.xml`](lwm2m/31028.xml); install it in the server's model directory

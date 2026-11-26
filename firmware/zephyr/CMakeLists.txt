@@ -225,7 +225,9 @@ if(CONFIG_EZ_DEV54_PROV_MOTION_SLEEP)
 endif()
 
 if(CONFIG_EZ_DEV54_UART_GPS)
-  target_sources(app PRIVATE "${RADAR_NRF54_DIR}/src/halow_gps.c"
+  target_include_directories(app PRIVATE "${WAKAAMA_CORE}/core" "${WAKAAMA_CORE}/coap")
+  target_link_options(zephyr_interface INTERFACE -Wl,--wrap=dm_handleRequest)
+  target_sources(app PRIVATE "${RADAR_NRF54_DIR}/src/halow_gps.c" "${RADAR_NRF54_DIR}/src/gps_execute.c"
     "${RADAR_NRF54_DIR}/src/gps_hw.c" "${RADAR_NRF54_DIR}/src/gps_nmea.c")
 endif()
 

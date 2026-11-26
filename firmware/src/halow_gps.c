@@ -37,6 +37,13 @@ static void finished(lwm2m_context_t *ctx, enum gps_state next, int result)
     gps_acquisition_diagnostics.result = last_result;
     for (uint16_t r = 2; r <= 6; ++r) changed(ctx, 31028, r);
 }
+bool halow_gps_result(struct gps_fix *out, int *result)
+{
+    if (state == ACQUIRING) return false;
+    *result = state == FIXED && valid ? 0 : last_result ? last_result : -ENODATA;
+    if (!*result) *out = fix;
+    return true;
+}
 int halow_gps_init(void)
 {
     int rc = gps_hw_init(); ready = rc == 0;
@@ -183,7 +190,24 @@ static uint8_t execute_control(lwm2m_context_t *ctx, uint16_t instance, uint16_t
     (void)buffer; (void)object;
     if (instance || resource > 6) return COAP_404_NOT_FOUND;
     if (resource) return COAP_405_METHOD_NOT_ALLOWED;
-    if (length) return COAP_400_BAD_REQUEST;
+    int64_t requested_timeout = timeout_s;
+    if (length) {
+        /* LwM2M Execute argument 0: timeout seconds, also opts into a deferred
+         * location response. Empty Execute retains the legacy immediate ACK. */
+        if (!buffer || length < 4 || length > 7 || buffer[0] != '0' || buffer[1] != '=') return COAP_400_BAD_REQUEST;
+        int first = 2, end = length;
+        if (buffer[first] == '\'') {
+            if (buffer[length - 1] != '\'') return COAP_400_BAD_REQUEST;
+            ++first; --end;
+        }
+        if (end - first < 2 || end - first > 3) return COAP_400_BAD_REQUEST;
+        requested_timeout = 0;
+        for (int i = first; i < end; ++i) {
+            if (buffer[i] < '0' || buffer[i] > '9') return COAP_400_BAD_REQUEST;
+            requested_timeout = requested_timeout * 10 + buffer[i] - '0';
+        }
+        if (requested_timeout < 10 || requested_timeout > 600) return COAP_400_BAD_REQUEST;
+    }
     if (!ready || state == ACQUIRING) return COAP_503_SERVICE_UNAVAILABLE;
     uint32_t sequence = gps_acquisition_diagnostics.sequence + 1;
     memset((void *)&gps_acquisition_diagnostics, 0, sizeof(gps_acquisition_diagnostics));
@@ -192,7 +216,7 @@ static uint8_t execute_control(lwm2m_context_t *ctx, uint16_t instance, uint16_t
     gps_acquisition_diagnostics.first_step_ms = gps_acquisition_diagnostics.first_line_ms = UINT32_MAX;
     gps_acquisition_diagnostics.fixed_ms = gps_acquisition_diagnostics.finished_ms = UINT32_MAX;
     gps_acquisition_diagnostics.state = ACQUIRING;
-    state = ACQUIRING; last_result = 0; used = 0; deadline = k_uptime_get() + timeout_s * 1000;
+    state = ACQUIRING; last_result = 0; used = 0; deadline = k_uptime_get() + requested_timeout * 1000;
     changed(ctx, 31028, 2); return COAP_204_CHANGED;
 }
 static lwm2m_list_t instance = {.id = 0};
