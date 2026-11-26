@@ -16,7 +16,7 @@ endpoints are not part of this profile.
    nRF54 RRAM uses ZMS as the persistent backend (the equivalent of the ESP32
    NVS role); it does not use erase-dependent NVS.
 4. With no credentials, advertise for 180 seconds. BLE stops completely after
-   the window expires, or five seconds after a successful status response.
+   a disconnected window expires, or five seconds after a successful status response.
    Normal boots with saved credentials do not start Bluetooth.
 
 The optional EdgeZ driver country hook runs before initial radio startup,
@@ -26,7 +26,7 @@ The station scans channels permitted by that country; the legacy factory
 channel field is retained for tracker record compatibility. AP DTIM10,
 1 MHz channel configuration, 13 ms dynamic PS timeout, camera UART startup
 parking, and the 64 KiB JPEG cache are retained. Runtime logs, console and RTT
-remain disabled. BLE is only an onboarding activity, not a standby service.
+remain disabled. BLE is an onboarding/temporary companion activity; provisioned boots do not start it.
 
 When camera mode is selected, UART22 driver initialization is deferred until the first
 Capture execute. Boot only parks TX/RX and turns camera power off; it does
@@ -41,6 +41,43 @@ Hold for five seconds to delete the saved BLE network and reboot. Factory
 identity, country and factory Wi-Fi are retained. With factory Wi-Fi present,
 reset therefore reconnects to that factory profile. Release a button held
 across reboot before another reset can be triggered.
+
+## Unprovisioned companion
+
+`CONFIG_EZ_DEV54_BLE_COMPANION` adds the app's existing 16-bit FFF0 service,
+FFF1 write/RX and FFF2 notify/TX, alongside the Espressif provisioning UUID.
+Both are advertised as `EZ_{serial}`. The companion service is registered only
+when no factory, saved or in-flight Wi-Fi profile exists. It cannot be claimed
+after Wi-Fi configuration is applied. It is incompatible with the optional
+tracker provisioning UUID, which occupies the same FFF0 UUID.
+
+A plain BLE connection leaves provisioning available. Subscribing to FFF2
+claims the companion session and resets/wipes the provisioning exchange and
+any staged credentials. All five provisioning endpoints, including version,
+then reject reads and writes until disconnect. Unsubscribing does not reopen
+them midway through a connection. An unprovisioned live BLE connection prevents
+window expiry/System OFF, including when it crosses the original boot deadline.
+
+Disconnect clears the companion parser, notifications and session, reopens
+provisioning, restarts advertising, and gives a new **180 seconds from that
+disconnect**. Reconnecting holds the device awake again. Provisioning success
+retains the existing five-second status grace and normal provisioned operation.
+
+Frames use the shared `EZ` + little-endian uint16 length + NetworkPacket protobuf
+wire format, with ATT fragmentation/reassembly in both directions. The current
+station/LwM2M firmware supports SDK INIT/status and DeviceSettings GET. INIT is a
+local session/status probe; it does not apply the phone's mesh profile as Wi-Fi.
+Companion buffers are allocated only while onboarding and released before
+applying Wi-Fi, so provisioned camera operation retains its RAM.
+Settings SET, mesh forwarding, scripts and other unsupported operations are
+rejected rather than reporting success. Status does not claim a live mesh link.
+
+Hardware verification (does not write credentials or factory data):
+
+```sh
+python3 tests/companion_ble.py --name EZ_5037CDF35BB6 \
+  --hold-seconds 185 --check-timeout
+```
 
 ## Transport standby and two-stage provisioning wake
 

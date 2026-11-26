@@ -252,3 +252,8 @@ if(EZ_DEV54_UNIFIED)
     "${RADAR_NRF54_DIR}/src/hardware_memory.c"
     "${RADAR_NRF54_DIR}/src/halow_hardware.c")
 endif()
+
+if(CONFIG_EZ_DEV54_BLE_COMPANION)
+  target_sources(app PRIVATE "${RADAR_NRF54_DIR}/src/ble_companion.c"
+    "${RADAR_NRF54_DIR}/src/companion_protocol.c")
+endif()

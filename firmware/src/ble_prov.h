@@ -3,8 +3,11 @@
 #define EZ_DEV54_BLE_PROV_H
 #include <stdbool.h>
 struct net_if;
+struct bt_conn;
 #if defined(CONFIG_EZ_DEV54_BLE_PROV)
 int ez_prov_init(void);
+bool ez_prov_companion_acquire(struct bt_conn *conn);
+bool ez_prov_companion_active(struct bt_conn *conn);
 const char *ez_prov_device_name(void);
 int ez_prov_forget_network(void);
 bool ez_prov_get_credentials(char ssid[33], char password[64]);

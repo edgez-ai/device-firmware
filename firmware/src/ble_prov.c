@@ -2,6 +2,8 @@
  * ESP-IDF-compatible provisioning on Zephyr. Settings/ZMS and bt_disable
  * lifecycle follow template-offgrid-tracker; the wire format is Protocomm. */
 #include "ble_prov.h"
+#include "ble_companion.h"
+#include "prov_session.h"
 #if defined(CONFIG_EZ_DEV54_BLE_PROV)
 #include "prov_protocol.h"
 #include "halow_sta.h"
@@ -58,6 +60,7 @@ static struct bt_conn *connection_ref(void)
 }
 static bool bt_started;
 static atomic_t window_open;
+static atomic_t companion_connected;
 static atomic_t closing_window;
 static atomic_t button_pressed;
 static atomic_t reset_armed;
@@ -219,6 +222,7 @@ static int apply_network(void *user)
 	config_generation++; wifi_state = 1;
 	wipe(&staged, sizeof(staged)); have_staged = false;
 	k_mutex_unlock(&config_lock);
+	ez_companion_release_buffers();
 	return halow_sta_reconnect();
 }
 static void get_status(void *user, struct prov_status *status)
@@ -389,12 +393,54 @@ static int set_mqtt_config(void *user, const uint8_t *payload, size_t length)
 	wipe(json, sizeof(json));
 	return rc;
 }
+/* Claim is separate from the BLE connected callback: Espressif's app must
+ * remain able to use provisioning until a client subscribes to FFF2. */
+static bool companion_available(void)
+{
+	k_mutex_lock(&config_lock, K_FOREVER);
+	bool available = IS_ENABLED(CONFIG_EZ_DEV54_BLE_COMPANION) && !have_active && !committed && !factory_wifi;
+	k_mutex_unlock(&config_lock);
+	return available;
+}
+bool ez_prov_companion_active(struct bt_conn *conn)
+{
+	k_spinlock_key_t key = k_spin_lock(&connection_lock);
+	bool active = conn && conn == connection && atomic_get(&companion_connected) &&
+		atomic_get(&window_open) && !atomic_get(&closing_window);
+	k_spin_unlock(&connection_lock, key);
+	return active;
+}
 static const struct prov_ops ops = {
 	.begin = crypto_begin, .crypt = crypto_stream, .reset = crypto_reset,
 	.set = set_network, .apply = apply_network, .status = get_status,
 	.scan = start_scan, .scan_status = get_scan_status, .scan_result = get_scan_result, .mqtt_config = set_mqtt_config,
 };
 static struct prov_protocol protocol = { .ops = &ops };
+
+bool ez_prov_companion_acquire(struct bt_conn *conn)
+{
+	k_mutex_lock(&protocol_lock, K_FOREVER);
+	k_mutex_lock(&config_lock, K_FOREVER);
+	k_spinlock_key_t key = k_spin_lock(&connection_lock);
+	bool allowed = prov_session_can_claim(IS_ENABLED(CONFIG_EZ_DEV54_BLE_COMPANION),
+		have_active || committed || factory_wifi, conn && conn == connection,
+		atomic_get(&window_open), atomic_get(&closing_window));
+	if (allowed) atomic_set(&companion_connected, 1);
+	k_spin_unlock(&connection_lock, key);
+	if (allowed) { wipe(&staged, sizeof(staged)); have_staged = false; }
+	k_mutex_unlock(&config_lock);
+	if (allowed) {
+		prov_protocol_reset(&protocol); tx_length = 0;
+		wipe(rx, sizeof(rx)); wipe(tx, sizeof(tx));
+		(void)k_work_cancel_delayable(&stop_work);
+	}
+	k_mutex_unlock(&protocol_lock);
+	return allowed;
+}
+static bool provisioning_accessible(void)
+{
+	return prov_session_provisioning_open(atomic_get(&window_open), atomic_get(&closing_window), atomic_get(&companion_connected));
+}
 
 #ifdef CONFIG_EZ_DEV54_PROV_TRACKER_UUID
 #define SERVICE_UUID BT_UUID_128_ENCODE(0x0000fff0, 0x0000, 0x1000, 0x8000, 0x00805f9b34fb)
@@ -416,8 +462,12 @@ static ssize_t read_endpoint(struct bt_conn *conn, const struct bt_gatt_attr *at
 			    void *buffer, uint16_t length, uint16_t offset)
 {
 	enum prov_endpoint endpoint = *(const enum prov_endpoint *)attr->user_data;
-	if (endpoint == PROV_VERSION) return bt_gatt_attr_read(conn, attr, buffer, length, offset, version, sizeof(version) - 1);
 	k_mutex_lock(&protocol_lock, K_FOREVER);
+	if (!provisioning_accessible()) { k_mutex_unlock(&protocol_lock); return BT_GATT_ERR(BT_ATT_ERR_AUTHORIZATION); }
+	if (endpoint == PROV_VERSION) {
+		ssize_t rc = bt_gatt_attr_read(conn, attr, buffer, length, offset, version, sizeof(version) - 1);
+		k_mutex_unlock(&protocol_lock); return rc;
+	}
 	ssize_t rc = endpoint != tx_endpoint || tx_length <= 0 ?
 		BT_GATT_ERR(BT_ATT_ERR_AUTHORIZATION) :
 		bt_gatt_attr_read(conn, attr, buffer, length, offset, tx, tx_length);
@@ -428,10 +478,12 @@ static ssize_t write_endpoint(struct bt_conn *conn, const struct bt_gatt_attr *a
 			     const void *buffer, uint16_t length, uint16_t offset, uint8_t flags)
 {
 	ARG_UNUSED(conn);
+	if (!provisioning_accessible()) return BT_GATT_ERR(BT_ATT_ERR_AUTHORIZATION);
 	if ((size_t)offset + length > sizeof(rx)) return BT_GATT_ERR(BT_ATT_ERR_INVALID_ATTRIBUTE_LEN);
 	if (flags & BT_GATT_WRITE_FLAG_PREPARE) return length; /* ATT reassembles on execute. */
 	if (offset) return BT_GATT_ERR(BT_ATT_ERR_INVALID_OFFSET);
 	k_mutex_lock(&protocol_lock, K_FOREVER);
+	if (!provisioning_accessible()) { k_mutex_unlock(&protocol_lock); return BT_GATT_ERR(BT_ATT_ERR_AUTHORIZATION); }
 	tx_endpoint = *(const enum prov_endpoint *)attr->user_data;
 	tx_length = 0; memcpy(rx, buffer, length);
 	int rc = prov_protocol_exchange(&protocol, tx_endpoint, rx, length, tx, sizeof(tx));
@@ -460,22 +512,41 @@ static void connected(struct bt_conn *conn, uint8_t err)
 	if (err) { (void)k_work_reschedule(&advertise_work, K_MSEC(200)); return; }
 	k_spinlock_key_t key = k_spin_lock(&connection_lock);
 	connection = bt_conn_ref(conn);
+	atomic_clear(&companion_connected);
 	k_spin_unlock(&connection_lock, key);
 	k_mutex_lock(&protocol_lock, K_FOREVER);
 	tx_length = 0; prov_protocol_reset(&protocol);
 	k_mutex_unlock(&protocol_lock);
+	ez_companion_reset(conn);
+	/* An unprovisioned BLE connection owns the awake interval. The close
+	 * worker also checks the connection under its lock, covering a timeout
+	 * that was already running when this callback arrived. */
+	k_mutex_lock(&config_lock, K_FOREVER);
+	bool unprovisioned = !committed;
+	k_mutex_unlock(&config_lock);
+	if (unprovisioned && !atomic_get(&closing_window))
+		(void)k_work_cancel_delayable(&stop_work);
 }
 static void disconnected(struct bt_conn *conn, uint8_t reason)
 {
 	ARG_UNUSED(conn); ARG_UNUSED(reason);
 	k_spinlock_key_t key = k_spin_lock(&connection_lock);
 	struct bt_conn *old = connection; connection = NULL;
+	atomic_clear(&companion_connected);
 	k_spin_unlock(&connection_lock, key);
 	if (old) bt_conn_unref(old);
 	k_mutex_lock(&protocol_lock, K_FOREVER);
 	prov_protocol_reset(&protocol); wipe(rx, sizeof(rx)); wipe(tx, sizeof(tx)); tx_length = 0;
 	k_mutex_unlock(&protocol_lock);
-	if (atomic_get(&window_open)) (void)k_work_reschedule(&advertise_work, K_MSEC(200));
+	ez_companion_reset(NULL);
+	if (atomic_get(&window_open) && !atomic_get(&closing_window)) {
+		k_mutex_lock(&config_lock, K_FOREVER);
+		bool unprovisioned = !committed;
+		k_mutex_unlock(&config_lock);
+		if (unprovisioned)
+			(void)k_work_reschedule(&stop_work, K_MINUTES(3));
+		(void)k_work_reschedule(&advertise_work, K_MSEC(200));
+	}
 }
 BT_CONN_CB_DEFINE(provisioning_callbacks) = { .connected = connected, .disconnected = disconnected };
 static void advertise(struct k_work *work)
@@ -484,13 +555,16 @@ static void advertise(struct k_work *work)
 	if (!atomic_get(&window_open) || !bt_started) return;
 	struct bt_conn *c = connection_ref();
 	if (c) { bt_conn_unref(c); return; }
-	const struct bt_data ad[] = {
+	struct bt_data ad[3] = {
 		BT_DATA_BYTES(BT_DATA_FLAGS, BT_LE_AD_GENERAL | BT_LE_AD_NO_BREDR),
 		BT_DATA(BT_DATA_UUID128_ALL, service_uuid.val, 16),
 	};
+	size_t ad_count = 2;
+	static const uint8_t companion_uuid[] = {0xf0, 0xff};
+	if (companion_available()) ad[ad_count++] = (struct bt_data)BT_DATA(BT_DATA_UUID16_ALL, companion_uuid, sizeof(companion_uuid));
 	const char *name = bt_get_name();
 	const struct bt_data sd[] = { BT_DATA(BT_DATA_NAME_COMPLETE, name, strlen(name)) };
-	last_error = bt_le_adv_start(BT_LE_ADV_CONN_FAST_1, ad, ARRAY_SIZE(ad), sd, ARRAY_SIZE(sd));
+	last_error = bt_le_adv_start(BT_LE_ADV_CONN_FAST_1, ad, ad_count, sd, ARRAY_SIZE(sd));
 }
 static void begin_window(struct k_work *work)
 {
@@ -499,13 +573,27 @@ static void begin_window(struct k_work *work)
 	int rc = bt_enable(NULL);
 	if (rc) { last_error = rc; return; }
 	bt_started = true; atomic_set(&window_open, 1);
+	if (companion_available()) {
+		rc = ez_companion_register();
+		if (rc) { last_error = rc; (void)k_work_reschedule(&stop_work, K_NO_WAIT); return; }
+	}
 	(void)bt_set_name(ez_factory_ble_name());
 	advertise(NULL);
 	(void)k_work_reschedule(&stop_work, K_SECONDS(CONFIG_EZ_DEV54_PROV_WINDOW_SECONDS));
 }
 static void stop_window(struct k_work *work)
 {
-	ARG_UNUSED(work); atomic_set(&closing_window, 1); atomic_clear(&window_open);
+	ARG_UNUSED(work);
+	k_mutex_lock(&config_lock, K_FOREVER);
+	k_spinlock_key_t key = k_spin_lock(&connection_lock);
+	bool hold_awake = prov_session_hold_awake(connection != NULL, committed, atomic_get(&closing_window));
+	if (!hold_awake) {
+		atomic_set(&closing_window, 1);
+		atomic_clear(&window_open);
+	}
+	k_spin_unlock(&connection_lock, key);
+	k_mutex_unlock(&config_lock);
+	if (hold_awake) return;
 	(void)k_work_cancel_delayable(&advertise_work);
 	if (bt_started) {
 	(void)bt_le_adv_stop();
@@ -515,6 +603,7 @@ static void stop_window(struct k_work *work)
 		bt_conn_unref(c);
 		(void)k_work_reschedule(&stop_work, K_MSEC(100)); return;
 	}
+	ez_companion_unregister();
 	int rc = bt_disable(); last_error = rc;
 	if (!rc) bt_started = false;
 	else { (void)k_work_reschedule(&stop_work, K_MSEC(100)); return; }

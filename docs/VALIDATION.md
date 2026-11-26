@@ -652,3 +652,39 @@ sensitivity was not physically exercised in this session.
 Test settings were restored to timer-only mode 0, 500 mg, 60 degrees and a
 60-second duration. The tested firmware remains on the device and the matching
 UI package remains on the AP.
+
+
+## 2026-11-26: unprovisioned BLE companion
+
+- Unified PlatformIO build passed. Final static RAM is 187504 bytes (71.53%);
+  companion RX/TX storage is allocated from the kernel heap only while
+  onboarding and released before Wi-Fi application or BLE shutdown.
+- Native session-policy/protobuf tests passed with ASan/UBSan, including
+  malformed/truncated packets, 10000 bounded random inputs, wrong destinations,
+  and rejection of settings writes. All eight ESP Security 1 interoperability
+  tests passed. Installed mobile SDK 0.1.35 encoded INIT/GET requests and decoded
+  the firmware's status/settings replies successfully.
+- On device `5037CDF35BB6`, real FFF0/FFF1/FFF2 exchanges passed with seven-byte
+  ATT fragments. Subscribing to FFF2 closed reads/writes on all five provisioning
+  endpoints. The companion stayed connected and responsive for 185 seconds,
+  crossing the original 180-second deadline.
+- An initial reconnect scan was intercepted by the Android app automatically
+  claiming the single BLE connection; Android logs showed successful service
+  discovery and FFF2 subscription. With the app paused, provisioning was readable
+  again after disconnect and BLE disappeared after the fresh 180-second grace.
+- The final memory-lifetime version passed the BLE exchanges/reconnect check and
+  normal Security 1 Wi-Fi provisioning, obtaining `192.168.12.112`. After the
+  success grace, the provisioned device did not advertise BLE. A subsequent
+  five-second LwM2M model read timed out; a new camera capture was not verified
+  in this session.
+- At the user's request, only the saved `ezcam/wifi` key was cleared through the
+  matching Settings/ZMS backend for final companion testing. Other saved settings
+  were retained. The factory page was compared byte-for-byte with the private
+  pre-test backup and is unchanged. Final active/committed Wi-Fi flags are false.
+  Firmware, factory and settings backups remain in the private artifacts folder.
+
+- Final Android verification: the selected profile reconnected automatically,
+  discovered FFF0, subscribed to FFF2 and decoded status. The Devices Chat card
+  displays `Connected · HaLow network down`, as expected without a Wi-Fi profile.
+  The phone is left connected for companion testing; mesh chat forwarding is
+  not implemented by this station-only companion service.

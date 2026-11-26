@@ -80,6 +80,15 @@ config EZ_DEV54_BLE_PROV
 	bool "ESP-IDF-compatible BLE provisioning"
 	default n
 
+config EZ_DEV54_BLE_COMPANION
+	bool "Unprovisioned EdgeZ BLE companion"
+	depends on EZ_DEV54_BLE_PROV && EZ_DEV54_UNIFIED && !EZ_DEV54_PROV_TRACKER_UUID
+	select BT_GATT_DYNAMIC_DB
+	default y
+	help
+	  Offer the existing FFF0 control service only before Wi-Fi provisioning.
+	  Companion sessions close provisioning endpoints and prevent System OFF.
+
 config EZ_DEV54_FACTORY_DATA
 	bool "Use tracker-compatible factory identity and country"
 	default y if EZ_DEV54_BLE_PROV
