@@ -33,6 +33,8 @@ jobs:
           /tmp/dev01-network
           cc -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined -Ifirmware/esp32/main/include tests/native/dev01_diag.c firmware/esp32/main/dev01_diag_format.c -o /tmp/dev01-diag
           /tmp/dev01-diag
+          cc -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined -Ifirmware/esp32/main/include tests/native/dev01_sleep_request.c -o /tmp/dev01-sleep-request
+          /tmp/dev01-sleep-request
           python3 .github/scripts/check-firmware-compliance.py
       - name: Package test firmware and notices
         shell: bash

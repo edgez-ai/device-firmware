@@ -8,6 +8,15 @@ menu "EZ-DEV01 station"
         bool "HT-HC33 BLE-provisioned HaLow station and gateway LwM2M client"
         depends on IDF_TARGET_ESP32S3
         default n
+
+    config EZ_DEV01_AUTO_SLEEP
+        bool "Automatic connected-state HaLow DTIM10 and MCU light sleep"
+        depends on EZ_DEV01_STATION
+        default n
+        help
+            Keep disabled for an always-awake station with listen interval 1.
+            Explicit WNM Sleep Execute remains available and restores this
+            awake policy when the requested sleep cycle finishes.
 endmenu
 
 menu "HaLow initialization"

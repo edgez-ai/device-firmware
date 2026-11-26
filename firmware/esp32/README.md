@@ -44,12 +44,16 @@ the new onboarding behavior.
 
 ## Radio power saving
 
-The default station image enables HaLow power saving with a listen interval of
-10 beacons. The AP supplies the DTIM period; use DTIM 10 on the Jetson AP for
-the matching schedule (about one second with a 100 TU beacon interval).
-BUSY/GPIO7 and WAKE/GPIO9 use the HC33 wiring. This saves radio power while
-the provisioned MCU continues serving LwM2M; unprovisioned companion connections
-still keep the MCU awake.
+The default station image sets `CONFIG_EZ_DEV01_AUTO_SLEEP=n`: HaLow power
+saving is disabled, the listen interval is 1 beacon, and the connected MCU stays
+awake at its configured CPU frequency. The AP's DTIM setting does not put an
+always-awake station into sleep. Diagnostics report `ps_req=0 li=1 mcu_ls=0`.
+
+Set `CONFIG_EZ_DEV01_AUTO_SLEEP=y` to opt back into radio power saving with a
+10-beacon listen interval and automatic MCU light sleep after provisioning.
+BUSY/GPIO7 and WAKE/GPIO9 remain configured in either build so an explicitly
+requested WNM sleep cycle is still supported. Before provisioning, companion
+and provisioning lifecycle behavior is unchanged.
 
 ## Local LwM2M
 
@@ -93,13 +97,15 @@ when assessing sleep behavior. The sampler
 uses existing idle entries without a polling timer or SPI transactions.
 Each read resets the sampling window; allow 20–30 seconds between reads.
 The read itself generates radio traffic. AP DTIM must be verified on the AP;
-`li=10` reports the station configuration, not a measured AP DTIM.
+`li` reports the station configuration (1 by default, 10 in automatic
+power-save mode), not a measured AP DTIM.
 Object 3347 also exposes USER button state (5500) and volatile press count (5501).
 
 ### MCU automatic light sleep
 
-The `ez-dev01` image enables ESP-IDF tickless idle and automatic light sleep
-only after BLE provisioning has finished and the HaLow station has an address.
+Automatic light sleep is disabled by default. With
+`CONFIG_EZ_DEV01_AUTO_SLEEP=y`, the `ez-dev01` image enables it only after BLE
+provisioning has finished and the HaLow station has an address.
 The external radio keeps its association. Its command vetoes and WAKE output
 hold an MCU no-light-sleep lock during radio work. BUSY-high wakes the MCU via
 EXT1, independently of the driver's normal BUSY edge interrupt. USER-low wakes
@@ -117,3 +123,62 @@ The same `/3347/0/5750` report adds `mcu_ls`, `ls_try`, `ls_ok`, `ls_pm_ms`,
 ESP-IDF wake cause; rejected attempts are excluded. `ls_pm_ms` includes sleep
 entry/exit overhead, so it is not exact hardware residency or measured current.
 `ls_wake` uses ESP-IDF wake-cause values (2=EXT0, 3=EXT1, 4=timer).
+
+### One-shot WNM sleep (same object as EZ-DEV54)
+
+HT-HC33 exposes `/31026/0` on its existing serial-number endpoint:
+
+| Resource | Operation | Meaning |
+| --- | --- | --- |
+| 0 | Execute, empty arguments | Queue one WNM sleep cycle |
+| 1 | Read/Write integer | Duration in seconds, 1–86400; default 60, RTC-retained for WNM wakes |
+| 2 | Read | 0 idle, 1 pending, 2 sleeping, 3 waking |
+| 3 | Read | Last result; 0 success, negative SDK status/error on failure |
+| 4 | Read | Completed cycles in the current power/session (retained across WNM deep wakes) |
+| 5, 6, 7 | Read | Entry, exit and actual sleep time in milliseconds |
+| 8, 9, 10 | Read | IMU wake disabled (0), reserved thresholds 500 mg / 60 degrees; writes unsupported on HC33 |
+| 11 | Read | Wake reason: 0 none/error, 1 timer, 4 USER button |
+
+Execute returns 2.04 before WNM entry. After a two-second response grace period,
+confirmable LwM2M transactions get up to ten seconds to drain. Retransmitted
+CoAP Execute requests cannot queue another cycle. The duration is snapshotted;
+settings cannot change while a cycle is pending. IP/ARP/DHCP transmit is gated
+without taking down the association. For an explicit request, radio power save is temporarily enabled if needed.
+The SDK then negotiates WNM with
+`chip_powerdown_enabled=true`, matching EZ-DEV54. Rejected entry restores the prior radio policy. Successful MCU deep-sleep wake
+boots into the normal configured awake policy.
+Unsupported/rejected WNM returns to normal operation with the error in resource 3; there is no direct
+firmware-command fallback masquerading as a negotiated sleep.
+
+After negotiated WNM power-down completes, the HC33 waits for radio/transport
+shutdown before parking GPIOs. RESET and WAKE stay low, CS stays high, SCK and
+MOSI stay low, and the battery-divider enable stays low. These output levels
+are held across MCU deep sleep. Other unused non-memory pads (including radio
+inputs, console and unused headers) have drive, input buffers and pulls disabled.
+Flash/PSRAM pads are left to ESP-IDF, and USER/GPIO0 remains a pulled-up RTC
+wake input.
+
+The MCU enters true deep sleep, with timer and USER wake. Wake reboots the MCU,
+releases all GPIO holds before driver initialization, and reconnects/re-registers
+using the saved Wi-Fi profile and the same serial endpoint. Sleep duration,
+last result, timings, replay protection and completed-cycle count are retained
+in RTC memory across these WNM wakes; cold/software resets clear them. Resource
+6 measures boot-to-IP recovery on HC33, and resource 7 excludes MCU boot time.
+Normal connected-state automatic radio/MCU sleep remains disabled after wake.
+The AP must support WNM (`wnm_sleep_mode=1` in hostapd). Remote requests cannot
+wake a radio in WNM; wait for the timer or press USER. No baseline build is added.
+
+Using the gateway's existing REST API (`CLIENT_URL` is
+`http://<gateway>:8088/api/clients/<serial>`):
+
+```sh
+curl -X PUT -H 'Content-Type: text/plain' --data '60' "$CLIENT_URL/31026/0/1"
+curl -X POST --data '' "$CLIENT_URL/31026/0/0"
+# After timer/button wake:
+curl "$CLIENT_URL/31026/0/3"
+curl "$CLIENT_URL/31026/0/7"
+```
+
+A successful Execute means the one-shot request was accepted. Check resource 3
+after wake/failed entry for its actual result. Do not poll during the requested
+sleep interval: the radio is deliberately unavailable.

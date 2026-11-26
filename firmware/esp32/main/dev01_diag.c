@@ -55,7 +55,7 @@ static void report(char text[DEV01_DIAG_TEXT_SIZE]) {
   uint32_t ms =
       elapsed / 1000 > UINT32_MAX ? UINT32_MAX : (uint32_t)(elapsed / 1000);
   if (dev01_diag_format(text, DEV01_DIAG_TEXT_SIZE, &snapshot, ms,
-                        dev01_power_save_requested(), 10,
+                        dev01_power_save_requested(), dev01_listen_interval(),
                         mmwlan_get_sta_state(), valid ? stats.rssi : INT32_MIN,
                         valid ? stats.hw_restart_counter : 0,
                         valid ? stats.datapath_rxq_frames_dropped : 0) < 0)

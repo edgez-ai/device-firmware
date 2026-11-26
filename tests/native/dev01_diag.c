@@ -19,6 +19,8 @@ int main(void) {
   assert(s.count == UINT32_MAX && s.wake == UINT32_MAX);
   assert(dev01_diag_format(text, sizeof(text), &s, UINT32_MAX, true, UINT_MAX, INT_MIN, INT_MIN, UINT32_MAX, UINT32_MAX) > 0);
   assert(strstr(text, "wake=10000"));
+  assert(dev01_diag_format(text, sizeof(text), &s, 1000, false, 1, 2, -39, 0, 0) > 0);
+  assert(strstr(text, "ps_req=0 li=1 sta=2"));
   assert(dev01_diag_format(text, 4, &s, 0, true, 10, 2, 0, 0, 0) == -ENOSPC);
   assert(dev01_diag_format(NULL, 4, &s, 0, true, 10, 2, 0, 0, 0) == -EINVAL);
   return 0;

@@ -47,6 +47,13 @@ void dev01_power_radio_awake(bool awake) {
   update_locked();
   portEXIT_CRITICAL(&lock);
 }
+bool dev01_power_radio_quiet(void) {
+  portENTER_CRITICAL(&lock);
+  bool quiet = !radio_awake && !vetoes;
+  portEXIT_CRITICAL(&lock);
+  return quiet;
+}
+#if CONFIG_EZ_DEV01_AUTO_SLEEP
 static esp_err_t after_sleep(int64_t elapsed_us, void *arg) {
   (void)arg;
   /* EXT wakeup temporarily routes these RTC-capable pins away from GPIO. */
@@ -71,11 +78,23 @@ static esp_err_t after_sleep(int64_t elapsed_us, void *arg) {
   portEXIT_CRITICAL(&stats_lock);
   return ESP_OK;
 }
+#endif
 void dev01_power_init(void) {
   ESP_ERROR_CHECK(esp_pm_lock_create(ESP_PM_NO_LIGHT_SLEEP, 0,
                                    "halow_bus", &radio_lock));
 }
+void dev01_power_restore_wake(void) {
+#if CONFIG_EZ_DEV01_AUTO_SLEEP
+  ESP_ERROR_CHECK(rtc_gpio_pullup_en(GPIO_NUM_0));
+  ESP_ERROR_CHECK(rtc_gpio_pulldown_dis(GPIO_NUM_0));
+  ESP_ERROR_CHECK(gpio_pulldown_dis(CONFIG_MM_BUSY));
+  ESP_ERROR_CHECK(esp_sleep_enable_ext1_wakeup_io(
+      UINT64_C(1) << CONFIG_MM_BUSY, ESP_EXT1_WAKEUP_ANY_HIGH));
+  ESP_ERROR_CHECK(esp_sleep_enable_ext0_wakeup(GPIO_NUM_0, 0));
+#endif
+}
 void dev01_power_start(void) {
+#if CONFIG_EZ_DEV01_AUTO_SLEEP
   /* Enable only after provisioning/BLE has finished and the radio is ready.
    * Preserve CS/RESET/WAKE and SPI output latches. Do not isolate a powered
    * radio's control lines or flash/PSRAM pins. Disable input/pull leakage on
@@ -93,12 +112,7 @@ void dev01_power_start(void) {
   }
   /* External wake circuits are independent of the Morse BUSY rising-edge ISR.
    * IRQ is intentionally not a wake source: it stays low during radio sleep. */
-  ESP_ERROR_CHECK(rtc_gpio_pullup_en(GPIO_NUM_0));
-  ESP_ERROR_CHECK(rtc_gpio_pulldown_dis(GPIO_NUM_0));
-  ESP_ERROR_CHECK(gpio_pulldown_dis(CONFIG_MM_BUSY));
-  ESP_ERROR_CHECK(esp_sleep_enable_ext1_wakeup_io(
-      UINT64_C(1) << CONFIG_MM_BUSY, ESP_EXT1_WAKEUP_ANY_HIGH));
-  ESP_ERROR_CHECK(esp_sleep_enable_ext0_wakeup(GPIO_NUM_0, 0));
+  dev01_power_restore_wake();
   esp_pm_sleep_cbs_register_config_t callbacks = {.exit_cb = after_sleep};
   ESP_ERROR_CHECK(esp_pm_light_sleep_register_cbs(&callbacks));
   window_us = esp_timer_get_time();
@@ -107,6 +121,15 @@ void dev01_power_start(void) {
   ESP_ERROR_CHECK(esp_pm_configure(&config));
   enabled = true;
   ESP_LOGI("dev01_power", "Automatic MCU light sleep enabled; BUSY/button wake, radio command/WAKE veto");
+#else
+  esp_pm_config_t config = {.max_freq_mhz = CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ,
+                            .min_freq_mhz = CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ,
+                            .light_sleep_enable = false};
+  ESP_ERROR_CHECK(esp_pm_configure(&config));
+  enabled = false;
+  window_us = esp_timer_get_time();
+  ESP_LOGI("dev01_power", "Automatic MCU light sleep disabled; CPU stays awake");
+#endif
 }
 int dev01_power_report(char *out, size_t size) {
   int64_t now = esp_timer_get_time();

@@ -34,3 +34,6 @@ bool dev01_companion_available(void);
 
 bool dev01_power_save_requested(void);
 uint32_t dev01_button_presses(void);
+
+unsigned dev01_listen_interval(void);
+esp_err_t dev01_set_radio_power_save(bool enabled);

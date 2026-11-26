@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #include "dev01.h"
 #include "dev01_power.h"
+#include "dev01_sleep.h"
 #include "driver/gpio.h"
 #include "esp_event.h"
 #include "esp_log.h"
@@ -58,6 +59,19 @@ bool dev01_companion_available(void) {
   return result;
 }
 bool dev01_power_save_requested(void) { return power_save_requested; }
+unsigned dev01_listen_interval(void) {
+#if CONFIG_EZ_DEV01_AUTO_SLEEP
+  return 10;
+#else
+  return 1;
+#endif
+}
+esp_err_t dev01_set_radio_power_save(bool enabled) {
+  if (mmwlan_set_power_save_mode(enabled ? MMWLAN_PS_ENABLED : MMWLAN_PS_DISABLED) != MMWLAN_SUCCESS)
+    return ESP_FAIL;
+  power_save_requested = enabled;
+  return ESP_OK;
+}
 uint32_t dev01_button_presses(void) {
   xSemaphoreTake(lock, portMAX_DELAY);
   uint32_t count = button_presses;
@@ -102,6 +116,7 @@ static void ip_event(void *arg, esp_event_base_t base, int32_t id, void *data) {
   xSemaphoreTake(lock, portMAX_DELAY);
   snprintf(address, sizeof(address), IPSTR, IP2STR(&event->ip_info.ip));
   xSemaphoreGive(lock);
+  dev01_sleep_online();
   xEventGroupSetBits(events, GOT_IP);
 }
 static void station_state(enum mmwlan_sta_state value) {
@@ -117,17 +132,13 @@ esp_err_t dev01_radio_acquire(void) {
       rc = ESP_ERR_INVALID_ARG;
     if (!rc)
       rc = mmhalow_init(NULL);
-#if CONFIG_HALOW_PS_MODE
-    if (!rc && mmwlan_set_listen_interval(10) != MMWLAN_SUCCESS)
-      rc = ESP_FAIL;
-    if (!rc && mmwlan_set_power_save_mode(MMWLAN_PS_ENABLED) != MMWLAN_SUCCESS)
+    if (!rc && mmwlan_set_listen_interval(dev01_listen_interval()) != MMWLAN_SUCCESS)
       rc = ESP_FAIL;
     if (!rc)
-      power_save_requested = true;
+      rc = dev01_set_radio_power_save(dev01_listen_interval() == 10);
     if (!rc)
-      ESP_LOGI(TAG, "HaLow power save enabled; listen interval 10 beacons (AP "
-                    "DTIM controls wake schedule)");
-#endif
+      ESP_LOGI(TAG, "HaLow power save %s; listen interval %u beacon(s)",
+               power_save_requested ? "enabled" : "disabled", dev01_listen_interval());
     if (!rc)
       radio_ready = true;
   }
@@ -261,8 +272,7 @@ static void standby(void) {
   esp_deep_sleep_start();
 }
 void app_main(void) {
-  gpio_deep_sleep_hold_dis();
-  gpio_hold_dis(CONFIG_MM_RESET_N);
+  dev01_sleep_boot();
   ESP_ERROR_CHECK(nvs_flash_init());
   ESP_ERROR_CHECK(edgez_esp_factory_data_init());
   ESP_ERROR_CHECK(edgez_esp_factory_data_get(&dev01_identity));

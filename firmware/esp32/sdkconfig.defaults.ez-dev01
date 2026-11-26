@@ -25,10 +25,12 @@ CONFIG_BT_NIMBLE_HOST_TASK_STACK_SIZE=8192
 CONFIG_ESP_WIFI_ENABLED=n
 CONFIG_ESP_HOST_WIFI_ENABLED=n
 
-# Follow the AP DTIM schedule using the HC33 BUSY/WAKE wiring.
+# Keep BUSY/WAKE support for explicitly requested WNM sleep.
+# Automatic radio/MCU sleep is disabled for the connected-state default.
+CONFIG_EZ_DEV01_AUTO_SLEEP=n
 CONFIG_HALOW_PS_MODE=y
 
-# Tickless automatic MCU light sleep, enabled after BLE provisioning finishes.
+# Retain PM support for explicit WNM sleep; automatic light sleep is off.
 CONFIG_PM_ENABLE=y
 CONFIG_FREERTOS_USE_TICKLESS_IDLE=y
 CONFIG_PM_LIGHT_SLEEP_CALLBACKS=y

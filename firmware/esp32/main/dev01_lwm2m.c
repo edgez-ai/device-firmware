@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #include "dev01.h"
 #include "dev01_diag.h"
+#include "dev01_sleep.h"
 #include "dev01_network.h"
 #include "esp_app_desc.h"
 #include "esp_log.h"
@@ -13,6 +14,7 @@
 #include "lwip/dhcp.h"
 #include "lwip/netif.h"
 #include "lwm2mclient.h"
+#include "mmwlan.h"
 #include <arpa/inet.h>
 #include <errno.h>
 #include <stdarg.h>
@@ -193,13 +195,15 @@ static void client_task(void *arg) {
     lwm2m_object_t *objects[] = {
         get_security_object(1, uri, NULL, NULL, 0, false),
         get_server_object(1, "U", 300, false), &device, &hardware,
-        dev01_diag_object()};
+        dev01_diag_object(), dev01_sleep_object()};
     lwm2m_context_t *context = lwm2m_init(&session);
     bool ready =
         context && objects[0] && objects[1] &&
         lwm2m_configure(context, dev01_identity.serial, NULL, NULL,
                         sizeof(objects) / sizeof(objects[0]), objects) == 0;
     while (ready) {
+      dev01_sleep_step(context, context->state == STATE_READY &&
+                               mmwlan_get_sta_state() == MMWLAN_STA_CONNECTED);
       if (current_server(netif) != session.server.sin_addr.s_addr)
         break;
       time_t timeout = 1;
@@ -220,8 +224,11 @@ static void client_task(void *arg) {
         ssize_t n = recvfrom(session.socket, buffer, sizeof(buffer), 0,
                              (struct sockaddr *)&from, &length);
         if (n > 0 && from.sin_addr.s_addr == session.server.sin_addr.s_addr &&
-            from.sin_port == session.server.sin_port)
+            from.sin_port == session.server.sin_port) {
+          dev01_sleep_request_begin(from.sin_addr.s_addr, buffer, n);
           lwm2m_handle_packet(context, buffer, n, &session);
+          dev01_sleep_request_end();
+        }
       }
     }
     if (context)
