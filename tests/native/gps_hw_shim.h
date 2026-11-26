@@ -50,3 +50,5 @@ void uart_irq_rx_enable(const struct device *);
 void uart_irq_rx_disable(const struct device *);
 void uart_irq_tx_disable(const struct device *);
 void uart_irq_err_disable(const struct device *);
+
+int64_t k_uptime_get(void);

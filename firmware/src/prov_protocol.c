@@ -203,10 +203,14 @@ int prov_protocol_exchange(struct prov_protocol *p, enum prov_endpoint endpoint,
 	if (endpoint == PROV_SESSION) rc = session(p, (struct view){request, length}, &w);
 	else {
 		if (p->state != 2) return -EACCES;
-		if (endpoint != PROV_CONFIG && endpoint != PROV_SCAN) return -EINVAL;
+		if (endpoint != PROV_CONFIG && endpoint != PROV_SCAN && endpoint != PROV_MQTT_CONFIG) return -EINVAL;
 		rc = p->ops->crypt(p->user, request, length);
 		if (rc) { prov_protocol_reset(p); return -EACCES; }
-		rc = endpoint == PROV_CONFIG ? config(p, (struct view){request, length}, &w) :
+		if (endpoint == PROV_MQTT_CONFIG) {
+			int saved = p->ops->mqtt_config ? p->ops->mqtt_config(p->user, request, length) : -ENOTSUP;
+			const char *reply = saved ? "{\"ok\":false,\"persisted\":false}" : "{\"ok\":true,\"persisted\":true}";
+			put(&w, reply, strlen(reply)); rc = finish(&w);
+		} else rc = endpoint == PROV_CONFIG ? config(p, (struct view){request, length}, &w) :
 			scan(p, (struct view){request, length}, &w);
 		if (rc >= 0 && p->ops->crypt(p->user, response, rc)) rc = -EACCES;
 	}

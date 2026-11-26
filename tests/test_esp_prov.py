@@ -41,9 +41,10 @@ T = C.CFUNCTYPE(None, C.c_void_p, C.POINTER(Status))
 SC = C.CFUNCTYPE(C.c_int, C.c_void_p, C.c_bool, C.c_bool)
 SS = C.CFUNCTYPE(None, C.c_void_p, C.POINTER(C.c_bool), C.POINTER(C.c_uint32))
 SR = C.CFUNCTYPE(C.c_int, C.c_void_p, C.c_uint32, C.POINTER(AP))
+N = C.CFUNCTYPE(C.c_int, C.c_void_p, P8, C.c_size_t)
 class Ops(C.Structure):
     _fields_ = [("begin", B), ("crypt", X), ("reset", R), ("set", S),
-                ("apply", A), ("status", T), ("scan", SC), ("scan_status", SS), ("scan_result", SR)]
+                ("apply", A), ("status", T), ("scan", SC), ("scan_status", SS), ("scan_result", SR), ("mqtt_config", N)]
 class Protocol(C.Structure):
     _fields_ = [("ops", C.POINTER(Ops)), ("user", C.c_void_p), ("state", U8), ("client", U8 * 32), ("device", U8 * 32)]
 
@@ -52,7 +53,7 @@ class Server:
         self.lib, self.pop, self.cipher = lib, pop, None
         self.ssid, self.password, self.applies, self.state = b"", b"", 0, 2
         self.ops = Ops(B(self.begin), X(self.crypt), R(self.reset), S(self.set), A(self.apply),
-                       T(self.status), SC(self.scan), SS(self.scan_status), SR(self.scan_result))
+                       T(self.status), SC(self.scan), SS(self.scan_status), SR(self.scan_result), N(self.mqtt_config))
         self.protocol = Protocol(C.pointer(self.ops), None, 0)
 
     def begin(self, _, client, device, iv):
@@ -76,6 +77,10 @@ class Server:
     def reset(self, _): self.cipher = None
     def set(self, _, ssid, sn, password, pn):
         self.ssid, self.password = C.string_at(ssid, sn), C.string_at(password, pn)
+        return 0
+    def mqtt_config(self, _, payload, length):
+        import json
+        self.device_name = json.loads(C.string_at(payload, length))["deviceName"].encode()
         return 0
     def apply(self, _):
         self.applies += 1; self.state = 0
@@ -141,6 +146,19 @@ class Interop(unittest.TestCase):
         self.assertEqual(resp.resp_get_status.connected.ssid, b"halowlink2")
         self.assertEqual(resp.resp_get_status.connected.ip4_addr, "192.0.2.10")
         self.assertEqual(self.server.applies, 1)
+
+    def test_name_requires_security1_and_shares_cipher_with_wifi(self):
+        with self.assertRaises(ValueError): self.server.exchange(4, b'{"deviceName":"Collar"}')
+        client = self.server.handshake()
+        name = "Luna GPS 🐾".encode()
+        response = self.server.exchange(4, client.encrypt_data(b'{"deviceName":"' + name + b'","clientId":"local-uuid"}'))
+        self.assertEqual(client.decrypt_data(response), b'{"ok":true,"persisted":true}')
+        self.assertEqual(self.server.device_name, name)
+        pb = proto.wifi_config_pb2
+        request = pb.WiFiConfigPayload(msg=2)
+        request.cmd_set_config.ssid = b"halowlink2"
+        request.cmd_set_config.passphrase = b"test-password"
+        self.assertEqual(self.server.secure(client, 1, request, pb.WiFiConfigPayload).resp_set_config.status, 0)
 
     def test_scan_full_names_and_negative_rssi(self):
         client = self.server.handshake(); pb = proto.wifi_scan_pb2

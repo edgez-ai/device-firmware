@@ -3,6 +3,7 @@
 #include "halow_gps.h"
 #include "gps_hw.h"
 #include "gps_nmea.h"
+#include "gps_diagnostics.h"
 #include <errno.h>
 #include <string.h>
 #include <zephyr/kernel.h>
@@ -11,11 +12,15 @@ enum gps_state { IDLE, ACQUIRING, FIXED, TIMED_OUT, ERROR, CANCELLED };
 static enum gps_state state;
 static struct gps_fix fix;
 static bool valid, powered, ready;
+/* Once per MCU boot; never delay publishing the first location. */
+static bool first_fix_seen;
+static int64_t keep_powered_until;
 static int last_result;
 static uint32_t fixes;
 static int64_t timeout_s = CONFIG_EZ_DEV54_GPS_FIX_TIMEOUT_SECONDS, deadline, fix_at;
 static char line[128];
 static size_t used;
+volatile struct gps_acquisition_diagnostics gps_acquisition_diagnostics;
 static void changed(lwm2m_context_t *ctx, uint16_t object, uint16_t resource)
 {
     if (!ctx) return;
@@ -25,8 +30,11 @@ static void changed(lwm2m_context_t *ctx, uint16_t object, uint16_t resource)
 }
 static void finished(lwm2m_context_t *ctx, enum gps_state next, int result)
 {
-    int rc = gps_hw_stop(); powered = false; used = 0;
+    int rc = gps_hw_stop(); powered = false; used = 0; keep_powered_until = 0;
     state = rc ? ERROR : next; last_result = rc ? rc : result;
+    gps_acquisition_diagnostics.finished_ms = (uint32_t)k_uptime_get();
+    gps_acquisition_diagnostics.state = state;
+    gps_acquisition_diagnostics.result = last_result;
     for (uint16_t r = 2; r <= 6; ++r) changed(ctx, 31028, r);
 }
 int halow_gps_init(void)
@@ -37,14 +45,21 @@ int halow_gps_init(void)
 }
 int halow_gps_step(lwm2m_context_t *ctx, bool allow)
 {
-    if (state != ACQUIRING) return -1;
-    if (!allow) { finished(ctx, CANCELLED, -ECANCELED); return -1; }
+    if (state != ACQUIRING && !(state == FIXED && powered)) return -1;
+    if (!allow) {
+        finished(ctx, state == FIXED ? FIXED : CANCELLED, state == FIXED ? 0 : -ECANCELED);
+        return -1;
+    }
+    if (state == FIXED && k_uptime_get() >= keep_powered_until) {
+        finished(ctx, FIXED, 0); return -1;
+    }
     if (!powered) {
+        gps_acquisition_diagnostics.first_step_ms = (uint32_t)k_uptime_get();
         int rc = gps_hw_start();
         if (rc) { finished(ctx, ERROR, rc); return -1; }
         powered = true;
     }
-    if (k_uptime_get() >= deadline) { finished(ctx, TIMED_OUT, -ETIMEDOUT); return -1; }
+    if (state == ACQUIRING && k_uptime_get() >= deadline) { finished(ctx, TIMED_OUT, -ETIMEDOUT); return -1; }
     uint8_t bytes[128]; int count;
     for (unsigned int budget = 0; budget < 512; budget += (unsigned int)count) {
         count = gps_hw_read(bytes, sizeof(bytes));
@@ -54,12 +69,35 @@ int halow_gps_step(lwm2m_context_t *ctx, bool allow)
             if (bytes[i] == '$') { used = 0; line[used++] = '$'; }
             else if (bytes[i] == '\n' && used) {
                 line[used] = 0; used = 0;
+                ++gps_acquisition_diagnostics.lines;
+                if (gps_acquisition_diagnostics.first_line_ms == UINT32_MAX)
+                    gps_acquisition_diagnostics.first_line_ms = (uint32_t)k_uptime_get();
+                memcpy((void *)gps_acquisition_diagnostics.last_line, line, sizeof(line));
+                bool rmc = !strncmp(line, "$GNRMC,", 7) || !strncmp(line, "$GPRMC,", 7);
+                if (rmc) {
+                    ++gps_acquisition_diagnostics.rmc_lines;
+                    memcpy((void *)gps_acquisition_diagnostics.last_rmc, line, sizeof(line));
+                    const char *status = strchr(line + 7, ',');
+                    if (status && status[1] == 'A' && status[2] == ',') ++gps_acquisition_diagnostics.active_rmc_lines;
+                }
                 struct gps_fix next;
-                if (gps_nmea_fix(line, &next)) {
+                bool parsed = gps_nmea_fix(line, &next);
+                if (rmc && !parsed) ++gps_acquisition_diagnostics.rejected_rmc_lines;
+                if (parsed && state == ACQUIRING) {
+                    gps_acquisition_diagnostics.fixed_ms = (uint32_t)k_uptime_get();
                     fix = next; valid = true; fix_at = k_uptime_get(); ++fixes;
-                    finished(ctx, FIXED, 0);
+                    if (!first_fix_seen) {
+                        first_fix_seen = true;
+                        keep_powered_until = fix_at + 60000;
+                    }
+                    if (k_uptime_get() < keep_powered_until) {
+                        state = FIXED; last_result = 0;
+                        gps_acquisition_diagnostics.state = state;
+                        gps_acquisition_diagnostics.result = 0;
+                        for (uint16_t r = 2; r <= 6; ++r) changed(ctx, 31028, r);
+                    } else finished(ctx, FIXED, 0);
                     changed(ctx, 6, 0); changed(ctx, 6, 1); changed(ctx, 6, 5);
-                    return -1;
+                    return powered ? (int)(keep_powered_until - k_uptime_get()) : -1;
                 }
             } else if (used) {
                 if (used < sizeof(line) - 1) line[used++] = bytes[i];
@@ -67,7 +105,8 @@ int halow_gps_step(lwm2m_context_t *ctx, bool allow)
             }
         }
     }
-    int64_t wait = deadline - k_uptime_get();
+    /* Drain UART during the first-fix hold so interrupts cannot fill the ring. */
+    int64_t wait = (state == FIXED ? keep_powered_until : deadline) - k_uptime_get();
     return wait <= 0 ? 0 : (int)wait;
 }
 static uint8_t discover_location(lwm2m_context_t *ctx, uint16_t instance, int *count,
@@ -146,6 +185,13 @@ static uint8_t execute_control(lwm2m_context_t *ctx, uint16_t instance, uint16_t
     if (resource) return COAP_405_METHOD_NOT_ALLOWED;
     if (length) return COAP_400_BAD_REQUEST;
     if (!ready || state == ACQUIRING) return COAP_503_SERVICE_UNAVAILABLE;
+    uint32_t sequence = gps_acquisition_diagnostics.sequence + 1;
+    memset((void *)&gps_acquisition_diagnostics, 0, sizeof(gps_acquisition_diagnostics));
+    gps_acquisition_diagnostics.sequence = sequence;
+    gps_acquisition_diagnostics.requested_ms = (uint32_t)k_uptime_get();
+    gps_acquisition_diagnostics.first_step_ms = gps_acquisition_diagnostics.first_line_ms = UINT32_MAX;
+    gps_acquisition_diagnostics.fixed_ms = gps_acquisition_diagnostics.finished_ms = UINT32_MAX;
+    gps_acquisition_diagnostics.state = ACQUIRING;
     state = ACQUIRING; last_result = 0; used = 0; deadline = k_uptime_get() + timeout_s * 1000;
     changed(ctx, 31028, 2); return COAP_204_CHANGED;
 }

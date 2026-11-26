@@ -136,12 +136,50 @@ class Tests(unittest.TestCase):
                       dict(password='x'*64), dict(ssid='x'*33), dict(serial=''), dict(private_key=b'\0'*32)]:
             record = self.sample(); record.update(patch)
             with self.assertRaises(ValueError): f.encode(record)
+    def test_model_extension_interoperability_and_crc(self):
+        record = self.sample(); record['model'] = 'EZ-DEV54-CAM'
+        page = f.encode(record)
+        self.assertEqual(f.decode(page)['model'], 'EZ-DEV54-CAM')
+        self.lib.ez_factory_model_parse.argtypes = [ctypes.c_void_p, ctypes.c_size_t, ctypes.c_void_p]
+        model = ctypes.create_string_buffer(33)
+        self.assertEqual(self.lib.ez_factory_model_parse(ctypes.create_string_buffer(page), len(page), model), 0)
+        self.assertEqual(model.value, b'EZ-DEV54-CAM')
+        corrupt = bytearray(page); corrupt[f.MODEL_OFFSET+8] ^= 1
+        self.assertNotIn('model', f.decode(bytes(corrupt)))
+        self.assertLess(self.lib.ez_factory_model_parse(ctypes.create_string_buffer(bytes(corrupt)), len(page), model), 0)
+        for invalid in ('', 'x'*33, 'bad\nmodel'):
+            record['model'] = invalid
+            with self.assertRaises(ValueError): f.encode(record)
+
+    def test_new_identity_names_and_no_update_migration(self):
+        record = self.sample(); record.update(serial='5037CDF35BB6', model='EZ-DEV54')
+        page = f.encode(record)
+        self.assertEqual(f.ble_qr(f.decode(page))['name'], 'EZ_5037CDF35BB6')
+        before = f.encode(self.sample())
+        source = Path(self.temp.name)/'legacy.bin'; output = Path(self.temp.name)/'updated.bin'
+        source.write_bytes(before)
+        subprocess.run(['python3', str(ROOT/'firmware/scripts/factory_data.py'), 'update', '--input', str(source), '--model', 'New model', '--output', str(output)], check=True, capture_output=True)
+        after = output.read_bytes()
+        self.assertEqual(after[8:105], before[8:105])
+        self.assertEqual(f.decode(after)['serial'], self.sample()['serial'])
+        self.assertEqual(f.ble_qr(f.decode(after))['pop'], f.ble_qr(self.sample())['pop'])
+
+    def test_serial_change_requires_exact_authorization_and_preserves_keys(self):
+        old = self.sample(); new = dict(old, serial='5037CDF35BB6', model='EZ-DEV54')
+        with self.assertRaises(ValueError): f.check_replacement(old, new)
+        with self.assertRaises(ValueError): f.check_replacement(old, new, 'wrong-device')
+        f.check_replacement(old, new, old['serial'])
+        changed_key = dict(new, private_key=bytes(range(1, 33)))
+        with self.assertRaises(ValueError): f.check_replacement(old, changed_key, old['serial'])
+        with self.assertRaises(ValueError): f.check_replacement(old, dict(new, serial='not-hex'), old['serial'])
+        f.check_replacement(old, old)
+
     def test_pop_and_private_output_permissions(self):
         record = self.sample(); qr = f.ble_qr(record)
         # Public fixture vectors pin the existing on-device credential format
         # across the EZ-DEV54 product rename (these are not device secrets).
         self.assertEqual(qr['pop'], 'dd2e90ccc90881d81e5c1de1b5f9ee36')
-        self.assertEqual(qr['name'], 'PROV_CAMae216c')
+        self.assertEqual(qr['name'], 'EZ_test-camera')
         self.assertEqual(qr['pop'], hmac.new(record['private_key'], f.LABEL, hashlib.sha256).hexdigest()[:32])
         self.assertNotIn('password', f.summary(record)); self.assertNotIn('private_key', f.summary(record))
         path = Path(self.temp.name)/'secret.bin'; f.secret_write(path, f.encode(record))

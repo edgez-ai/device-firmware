@@ -1,4 +1,5 @@
 #include "hardware_config.h"
+#include "device_platform.h"
 #include "halow_hardware.h"
 /* LwM2M over WPA3 HaLow, using either UDP or the MAC transport. */
 #ifdef RADAR_HALOW_LIGHT
@@ -698,9 +699,7 @@ static void run(void *unused1, void *unused2, void *unused3)
 		if ((active & 1) && ctx == NULL) {
 			link.fd = open_link(&link);
 			if (link.fd >= 0) {
-				char endpoint[19];
-				snprintk(endpoint, sizeof(endpoint), "halow-%02x%02x%02x%02x%02x%02x",
-					link.mac[0], link.mac[1], link.mac[2], link.mac[3], link.mac[4], link.mac[5]);
+				const char *endpoint = board_device_serial();
 				objects[0] = get_security_object(1, link.uri, NULL, NULL, 0, false);
 				ctx = objects[0] != NULL ? lwm2m_init(&link) : NULL;
 				if (ctx != NULL && lwm2m_configure(ctx, endpoint, NULL, NULL,

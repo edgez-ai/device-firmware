@@ -7,6 +7,8 @@ const struct ez_factory_data *ez_factory_get(void);
 int ez_factory_crypto_init(void);
 const char *ez_factory_pop(void);
 const char *ez_factory_ble_name(void);
+const char *ez_factory_device_serial(void);
+const char *ez_factory_model(void);
 /* -1 for no valid hardware flag; base selection is handled by the caller. */
 int ez_factory_hardware(void);
 /* Read and validate the optional motion extension on each call. */

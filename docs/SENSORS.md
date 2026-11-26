@@ -177,10 +177,10 @@ example, not a deployed calibration. A charger-induced drop must not be scaled
 away. Both Device voltage and its battery percentage use the corrected value.
 
 
-For this carrier the operator requested a fixed **×1.13** correction; the
-camera sensor profile sets `CONFIG_EZ_DEV54_VOLTAGE_SCALE_PPM=1130000`.
-This is an operator-selected correction, not a calibrated accuracy guarantee.
-A previous reported 2912 mV becomes approximately 3291 mV. The Kconfig fallback
+The sensor profile uses unity calibration,
+`CONFIG_EZ_DEV54_VOLTAGE_SCALE_PPM=1000000`. The former ×1.13 multiplier
+is removed; the physical R26/R29 divider correction remains ×2.
+No extra fixed gain correction is applied. The Kconfig fallback
 remains unity for other profiles. The selected delay is 100 ms, not 500 ms.
 
 
@@ -223,7 +223,7 @@ these switched nodes reliably during the normal 100 ms measurement window.
 If the physical ADC node is correct but the unscaled digital reading is wrong,
 focus on ADC conversion/reference configuration. If the physical node is low,
 inspect supply/protection/switch/divider/assembly rather than compensating it
-as an ADC gain error. The selected ×1.13 correction does not remove the raw
+as an ADC gain error. A fixed calibration multiplier does not remove the raw
 reading's two-group variation.
 
 References: [Nordic acquisition time](https://docs.nordicsemi.com/r/bundle/ps_nrf54l15/page/saadc.html-concept_qh3_spp_qr),

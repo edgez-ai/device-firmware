@@ -11,6 +11,8 @@
 #define EZ_FACTORY_HARDWARE_SIZE 16U
 #define EZ_FACTORY_MOTION_OFFSET 272U
 #define EZ_FACTORY_MOTION_SIZE 16U
+#define EZ_FACTORY_MODEL_OFFSET 288U
+#define EZ_FACTORY_MODEL_SIZE 48U
 #define EZ_FACTORY_GYRO_DEFAULT_DPS 30U
 #define EZ_FACTORY_GYRO_MIN_DPS 5U
 #define EZ_FACTORY_GYRO_MAX_DPS 180U
@@ -25,4 +27,5 @@ bool ez_factory_has_wifi(const struct ez_factory_data *);
  * A missing or invalid extension must never select an external peripheral. */
 int ez_factory_hardware_parse(const uint8_t *, size_t, uint8_t *);
 int ez_factory_motion_parse(const uint8_t *, size_t, uint16_t *, uint8_t *);
+int ez_factory_model_parse(const uint8_t *, size_t, char model[33]);
 #endif

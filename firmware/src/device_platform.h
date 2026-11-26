@@ -4,6 +4,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 const char *board_device_serial(void);
+const char *board_device_model(void);
 const char *board_device_software(void);
 uint32_t board_memory_free_kb(void);
 uint32_t board_memory_total_kb(void);

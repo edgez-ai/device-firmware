@@ -77,7 +77,9 @@ No firmware is flashed merely by running `pio run`.
 
 ## LwM2M resources
 
-The endpoint is derived from the HaLow MAC. The existing Camera object is
+The endpoint is the factory serial; new factory records use 12 uppercase hex characters.
+BLE advertises `EZ_{serial}`. Device `/3/0/1` reports the factory model and
+`/3/0/2` reports that same serial. Existing factory data is never migrated. The existing Camera object is
 `5001/0`; button and light behavior are retained.
 
 | Path | Operation | Meaning |

@@ -56,7 +56,7 @@ async def main(args):
     for device, advertisement in advertisements.values():
         # CoreBluetooth can cache the previous firmware's peripheral name.
         name = advertisement.local_name or device.name or ""
-        if name == args.name if args.name else name.startswith("PROV_CAM"):
+        if name == args.name if args.name else name.startswith("EZ_"):
             found.append((device, name))
     if len(found) != 1:
         raise RuntimeError(f"Expected one matching provisioning device, found {len(found)}; use --name if needed")

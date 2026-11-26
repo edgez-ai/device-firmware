@@ -87,3 +87,16 @@ int ez_factory_motion_parse(const uint8_t *page, size_t size,
   *angle = p[10];
   return 0;
 }
+
+int ez_factory_model_parse(const uint8_t *page, size_t size, char model[33]) {
+  if (!page || !model) return -EINVAL;
+  if (size < EZ_FACTORY_MODEL_OFFSET + EZ_FACTORY_MODEL_SIZE) return -ENOENT;
+  const uint8_t *p = page + EZ_FACTORY_MODEL_OFFSET;
+  if (le32(p) == UINT32_MAX || le32(p) == 0) return -ENOENT;
+  if (le32(p) != 0x444d5a45U || le16(p + 4) != 1 || le16(p + 6) != 48 ||
+      le32(p + 44) != crc32(p, 44)) return -EBADMSG;
+  if (!p[8] || !memchr(p + 8, 0, 33) || p[41] || p[42] || p[43]) return -EINVAL;
+  for (size_t i = 8; p[i]; ++i) if (p[i] < 32 || p[i] > 126) return -EINVAL;
+  memcpy(model, p + 8, 33);
+  return 0;
+}

@@ -22,6 +22,7 @@
 #include <zephyr/net/net_mgmt.h>
 #include <zephyr/net/wifi_mgmt.h>
 #include <zephyr/settings/settings.h>
+#include <zephyr/data/json.h>
 #include <zephyr/sys/atomic.h>
 #include <zephyr/sys/reboot.h>
 #include <zephyr/sys/util.h>
@@ -33,6 +34,8 @@ struct credentials {
 };
 #define CONFIG_MAGIC 0x455a4301U
 static struct credentials active, staged;
+static char device_name[129];
+const char *ez_prov_device_name(void) { return device_name; }
 static bool have_active, have_staged, committed, factory_wifi;
 static uint32_t config_generation;
 static uint32_t wifi_state = 2, fail_reason;
@@ -156,6 +159,13 @@ static bool valid_record(const struct credentials *c)
 static int load_network(const char *name, size_t length, settings_read_cb read, void *arg)
 {
 	struct credentials record;
+	if (!strcmp(name, "name")) {
+		if (!length || length >= sizeof(device_name)) return -EINVAL;
+		if (read(arg, device_name, length) != length || memchr(device_name, 0, length)) {
+			memset(device_name, 0, sizeof(device_name)); return -EINVAL;
+		}
+		device_name[length] = 0; return 0;
+	}
 	if (strcmp(name, "wifi")) return -ENOENT;
 	if (length != sizeof(record)) return -EINVAL;
 	if (read(arg, &record, sizeof(record)) != sizeof(record) || !valid_record(&record)) {
@@ -308,10 +318,81 @@ static int get_scan_result(void *user, uint32_t index, struct prov_ap *ap)
 	if (!rc) *ap = scan_entries[index];
 	k_mutex_unlock(&scan_lock); return rc;
 }
+/* Same mqtt-config JSON contract used by ESP32. Wi-Fi still uses prov-config. */
+struct mqtt_config_request { char *device_name; };
+static const struct json_obj_descr mqtt_config_descr[] = {
+	JSON_OBJ_DESCR_PRIM_NAMED(struct mqtt_config_request, "deviceName", device_name, JSON_TOK_STRING),
+};
+static int hex_digit(char c)
+{
+	if (c >= '0' && c <= '9') return c - '0';
+	if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+	if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+	return -1;
+}
+static int unicode_escape(const char **cursor, uint32_t *value)
+{
+	*value = 0;
+	for (int i = 0; i < 4; ++i) {
+		int digit = hex_digit(**cursor);
+		if (digit < 0) return -EINVAL;
+		*value = (*value << 4) | digit; ++*cursor;
+	}
+	return 0;
+}
+/* Zephyr validates JSON escapes but leaves string values escaped. */
+static int decode_name(const char *input, char output[129])
+{
+	size_t length = 0;
+	while (*input) {
+		uint32_t c = (uint8_t)*input++;
+		bool unicode = false;
+		if (c == '\\') {
+			c = (uint8_t)*input++;
+			if (c == 'u') {
+				unicode = true;
+				if (unicode_escape(&input, &c)) return -EINVAL;
+				if (c >= 0xd800 && c <= 0xdbff) {
+					uint32_t low;
+					if (input[0] != '\\' || input[1] != 'u') return -EINVAL;
+					input += 2;
+					if (unicode_escape(&input, &low) || low < 0xdc00 || low > 0xdfff) return -EINVAL;
+					c = 0x10000 + ((c - 0xd800) << 10) + low - 0xdc00;
+				} else if (c >= 0xdc00 && c <= 0xdfff) return -EINVAL;
+			} else if (c != '"' && c != '\\' && c != '/') return -EINVAL;
+		}
+		if (c < 0x20 || c == 0x7f) return -EINVAL;
+		uint8_t bytes[4]; size_t n = 1;
+		if ((!unicode && c <= 0xff) || c <= 0x7f) bytes[0] = c;
+		else if (c <= 0x7ff) { n = 2; bytes[0] = 0xc0 | (c >> 6); bytes[1] = 0x80 | (c & 63); }
+		else if (c <= 0xffff) { n = 3; bytes[0] = 0xe0 | (c >> 12); bytes[1] = 0x80 | ((c >> 6) & 63); bytes[2] = 0x80 | (c & 63); }
+		else { n = 4; bytes[0] = 0xf0 | (c >> 18); bytes[1] = 0x80 | ((c >> 12) & 63); bytes[2] = 0x80 | ((c >> 6) & 63); bytes[3] = 0x80 | (c & 63); }
+		if (length + n > 128) return -EINVAL;
+		memcpy(output + length, bytes, n); length += n;
+	}
+	output[length] = 0;
+	return length ? (int)length : -EINVAL;
+}
+static int set_mqtt_config(void *user, const uint8_t *payload, size_t length)
+{
+	ARG_UNUSED(user);
+	if (!length || length > PROV_PACKET_MAX || memchr(payload, 0, length)) return -EINVAL;
+	char json[PROV_PACKET_MAX + 1], name[129];
+	memcpy(json, payload, length); json[length] = 0;
+	struct mqtt_config_request request = {0};
+	int64_t fields = json_obj_parse(json, length, mqtt_config_descr, ARRAY_SIZE(mqtt_config_descr), &request);
+	if (fields < 0 || !(fields & 1) || !request.device_name) return -EINVAL;
+	int size = decode_name(request.device_name, name);
+	if (size < 0) return size;
+	int rc = settings_save_one("ezcam/name", name, size);
+	if (!rc) memcpy(device_name, name, size + 1);
+	wipe(json, sizeof(json));
+	return rc;
+}
 static const struct prov_ops ops = {
 	.begin = crypto_begin, .crypt = crypto_stream, .reset = crypto_reset,
 	.set = set_network, .apply = apply_network, .status = get_status,
-	.scan = start_scan, .scan_status = get_scan_status, .scan_result = get_scan_result,
+	.scan = start_scan, .scan_status = get_scan_status, .scan_result = get_scan_result, .mqtt_config = set_mqtt_config,
 };
 static struct prov_protocol protocol = { .ops = &ops };
 
@@ -327,8 +408,9 @@ static struct bt_uuid_128 session_uuid = BT_UUID_INIT_128(ENDPOINT_UUID(0xff51))
 static struct bt_uuid_128 config_uuid = BT_UUID_INIT_128(ENDPOINT_UUID(0xff52));
 static struct bt_uuid_128 scan_uuid = BT_UUID_INIT_128(ENDPOINT_UUID(0xff50));
 static struct bt_uuid_128 version_uuid = BT_UUID_INIT_128(ENDPOINT_UUID(0xff53));
-static const enum prov_endpoint endpoints[] = {PROV_SESSION, PROV_CONFIG, PROV_SCAN, PROV_VERSION};
-static const char version[] = "{\"prov\":{\"ver\":\"v1.1\",\"sec_ver\":1,\"sec_patch_ver\":0,\"cap\":[\"wifi_scan\"]},\"ez-dev54\":{\"ver\":\"1\"}}";
+static struct bt_uuid_128 mqtt_uuid = BT_UUID_INIT_128(ENDPOINT_UUID(0xff54));
+static const enum prov_endpoint endpoints[] = {PROV_SESSION, PROV_CONFIG, PROV_SCAN, PROV_VERSION, PROV_MQTT_CONFIG};
+static const char version[] = "{\"prov\":{\"ver\":\"v1.1\",\"sec_ver\":1,\"sec_patch_ver\":0,\"cap\":[\"wifi_scan\",\"ez_wifi_prov\",\"mqtt_config\"]},\"ez-dev54\":{\"ver\":\"1\"}}";
 
 static ssize_t read_endpoint(struct bt_conn *conn, const struct bt_gatt_attr *attr,
 			    void *buffer, uint16_t length, uint16_t offset)
@@ -370,7 +452,8 @@ BT_GATT_SERVICE_DEFINE(provisioning_service,
 	ENDPOINT(session_uuid, 0, "prov-session"),
 	ENDPOINT(config_uuid, 1, "prov-config"),
 	ENDPOINT(scan_uuid, 2, "prov-scan"),
-	ENDPOINT(version_uuid, 3, "proto-ver"));
+	ENDPOINT(version_uuid, 3, "proto-ver"),
+	ENDPOINT(mqtt_uuid, 4, "mqtt-config"));
 
 static void connected(struct bt_conn *conn, uint8_t err)
 {

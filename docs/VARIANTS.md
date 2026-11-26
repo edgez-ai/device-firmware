@@ -110,9 +110,16 @@ No location is fabricated before a valid fix.
 | `/6/0/1` | Read/Observe | Cached longitude, decimal degrees |
 | `/6/0/5` | Read/Observe | UTC Unix timestamp from the RMC date/time |
 
-The receiver supply is cut and UART pins parked after the first valid fix,
-timeout or hardware error. WNM requests and LwM2M context loss cancel an ongoing
-acquisition and also power it off. WNM does not automatically restart GPS on
+After the first successful fix of each MCU boot, the receiver stays powered
+for an additional 60 seconds to continue collecting navigation data. The fix
+and FIXED state are published immediately; the app does not wait this extra
+minute. UART data is drained during the hold. Another acquisition reuses the
+powered receiver without extending the hold. Later successful acquisitions
+cut the receiver supply and park UART pins immediately. Acquisition timeout
+or hardware error also powers it off. The first-fix hold is RAM-only, resets
+on MCU reboot, and does not guarantee a complete almanac download. WNM requests and LwM2M context loss cancel an ongoing
+acquisition or end the first-fix hold and also power it off. A completed fix
+remains FIXED when its hold is interrupted. WNM does not automatically restart GPS on
 wake. A previous good fix remains readable after a later failure; check its age
 and acquisition state. Location reads return CoAP 5.03 before the first fix.
 Reading or observing the cached location never starts the receiver. Fixes are
@@ -136,3 +143,20 @@ peripheral power still require the corresponding hardware and meter tests.
 The GPS UART boundary is also compiled under sanitizers with fake driver APIs
 to check deferred initialization, ISR handoff, power sequencing and cleanup
 after UART initialization/callback/resume failures.
+
+### Measuring GPS latency over SWD
+
+`gps_uart_diagnostics` and `gps_acquisition_diagnostics` retain RAM-only
+per-acquisition timing, receive/drop counts, and the latest NMEA/RMC sentences.
+They do not add LwM2M resources or provisioning endpoints.
+
+Run `python3 tests/measure_gps.py --probe <J-Link-serial> --nm <arm-none-eabi-nm>
+--out <private-artifact-directory> --tag <sample-name>` against the exact ELF
+flashed on the target. The helper reads RAM without resetting/flashing; no halt
+command is sent. Raw sentences can contain location and are saved only in the
+private directory; its console summary contains timing and counters.
+
+Compare requested/first-step/start/first-byte/first-line/fixed/finished stamps.
+RMC `V` before the fixed stamp means the receiver has not supplied a valid fix;
+active RMC sentences rejected by the parser, or nonzero UART drops, indicate
+a different receive/parse problem. Millisecond stamps wrap at 32 bits.

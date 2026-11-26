@@ -20,7 +20,7 @@ class HardwareConfig(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             binary = Path(directory)/'object'
             subprocess.run(['cc','-std=c11','-Wall','-Wextra','-Werror','-fsanitize=address,undefined',
-                '-DLWM2M_CLIENT_MODE','-I'+str(ROOT/'firmware/src'),'-I'+str(ROOT/'third_party/wakaama/include'),
+                '-DLWM2M_CLIENT_MODE','-DCONFIG_EZ_DEV54_BLE_PROV=1','-I'+str(ROOT/'firmware/src'),'-I'+str(ROOT/'third_party/wakaama/include'),
                 str(ROOT/'firmware/src/halow_hardware.c'),str(ROOT/'tests/native/hardware_object.c'),
                 '-o',str(binary)],check=True)
             subprocess.run([str(binary)],check=True)

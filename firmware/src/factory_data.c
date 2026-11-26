@@ -11,7 +11,7 @@
 static struct ez_factory_data cached;
 static bool attempted;
 static int load_result = -ENOENT;
-static char pop[33], ble_name[15];
+static char pop[33], ble_name[36], device_serial[33], model[33] = "EZ-DEV54";
 BUILD_ASSERT(DT_REG_ADDR(DT_NODELABEL(factory_partition)) == EZ_FACTORY_ADDRESS);
 
 int ez_factory_init(void)
@@ -22,6 +22,10 @@ int ez_factory_init(void)
 	 * RRAM is memory mapped; parse once without requiring a flash driver. */
 	uintptr_t address = DT_REG_ADDR(DT_NODELABEL(cpuapp_rram)) + EZ_FACTORY_ADDRESS;
 	load_result = ez_factory_parse((const uint8_t *)address, EZ_FACTORY_RECORD_SIZE, &cached);
+	if (load_result == 0) {
+		memcpy(device_serial, cached.serial, sizeof(device_serial));
+		(void)ez_factory_model_parse((const uint8_t *)address, EZ_FACTORY_PAGE_SIZE, model);
+	}
 	return load_result;
 }
 const struct ez_factory_data *ez_factory_get(void)
@@ -59,19 +63,16 @@ int ez_factory_crypto_init(void)
 	const char hex[] = "0123456789abcdef";
 	for (size_t i = 0; i < 16; ++i) { pop[2*i] = hex[digest[i] >> 4]; pop[2*i+1] = hex[digest[i] & 15]; }
 	pop[32] = 0;
-	rc = psa_hash_compute(PSA_ALG_SHA_256, cached.public_key, 32, digest, sizeof(digest), &size);
-	if (rc != PSA_SUCCESS || size != 32) return -EIO;
-	memcpy(ble_name, "PROV_CAM", 8);
-	for (size_t i = 0; i < 3; ++i) {
-		ble_name[8+2*i] = hex[digest[i] >> 4]; ble_name[9+2*i] = hex[digest[i] & 15];
-	}
-	ble_name[14] = 0;
+	memcpy(ble_name, "EZ_", 3);
+	memcpy(ble_name + 3, device_serial, strlen(device_serial) + 1);
 	volatile uint8_t *wipe = digest;
 	for (size_t i = 0; i < sizeof(digest); ++i) wipe[i] = 0;
 	return 0;
 }
 const char *ez_factory_pop(void) { return pop; }
 const char *ez_factory_ble_name(void) { return ble_name; }
+const char *ez_factory_device_serial(void) { return ez_factory_init() == 0 ? device_serial : "unavailable"; }
+const char *ez_factory_model(void) { (void)ez_factory_init(); return model; }
 int ez_factory_hardware(void)
 {
 	if (ez_factory_init()) return -1;

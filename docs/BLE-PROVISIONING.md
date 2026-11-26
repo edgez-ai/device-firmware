@@ -114,7 +114,7 @@ Never commit them or publish them as firmware build artifacts.
 ```sh
 # A new device identity (requires OpenSSL for X25519 key generation).
 python3 firmware/scripts/factory_data.py create \
-  --serial EZ-DEV54-000001 --country EU --clear-wifi \
+  --serial 5037CDF35BB6 --model EZ-DEV54-GPS --country EU --clear-wifi \
   --output artifacts/factory-new.bin
 
 # Update an existing backup, preserving serial, identity keys and page tail.
@@ -144,19 +144,28 @@ overwritten: choose a new output name for each factory revision.
 
 PoP is derived as the first 16 bytes of
 `HMAC-SHA256(factory_private_key, "EZ-CAM01 BLE provisioning PoP v1")`, encoded
-as 32 lowercase hex characters. The advertised name is `PROV_CAM` plus the
-first six lowercase hex characters of SHA256(factory_public_key). Both remain
-stable when country or Wi-Fi is updated. The QR JSON contains the standard
+as 32 lowercase hex characters. New factory records use exactly 12 uppercase hex characters for `serial`,
+for example `5037CDF35BB6`. The advertised name is `EZ_` plus that serial,
+and the LwM2M endpoint is the serial itself. Neither is derived separately
+from a public-key hash or radio MAC. The QR JSON contains the standard
 `ver`, `name`, `pop`, `transport` fields; encode this JSON into a QR label for
 the official app, or enter its PoP manually. Factory private keys are never
 sent over BLE. No per-device PoP needs to be compiled into firmware.
 
-The EZ-DEV54 rename preserves this original KDF label, the `PROV_CAM` BLE
-name prefix and the on-flash `ezcam/wifi` settings key. They are versioned
-compatibility identifiers, not the current product name. Existing factory
-identities, QR labels, PoPs and saved Wi-Fi profiles remain valid after updating
-to the renamed firmware. Do not substitute the new product name into the PoP
-derivation label.
+The original KDF label and on-flash `ezcam/wifi` settings key are retained.
+The PoP derivation is unchanged. There is no serial migration, alias mapping,
+or automatic rewrite of existing records. `update` preserves the stored serial unless `--serial` is explicitly supplied.
+Changing a live device serial additionally requires `flash --previous-serial`
+with the exact old value. Identity keys cannot be replaced by this update path.
+New identity creation is separate from applying firmware to an existing device.
+
+Factory model is stored in an optional 48-byte CRC-protected `EZMD` v1 extension
+at page offset 288, following the existing hardware and motion extensions. It
+contains up to 32 printable ASCII characters. New records default to `EZ-DEV54-GPS` for collars; use `--model EZ-DEV54-CAM`
+for cameras. The app classifies the device using this model resource. Explicit model updates do not
+change serials or keys. Missing or invalid model extensions use `EZ-DEV54`.
+LwM2M Device resources `/3/0/1` and `/3/0/2` report factory model and serial.
+
 
 ## Verification
 
@@ -180,3 +189,15 @@ The live helper reads the AP password from ignored
 See [validation results](VALIDATION.md) for hardware results and limitations.
 
 External hardware factory flags and persistent overrides are documented in [hardware selection](VARIANTS.md). The default without either is base.
+
+### Provisioned display name
+
+Firmware advertises `mqtt_config`. After Security 1 authentication the app
+sends the existing provisioning JSON payload, including `deviceName`
+(1–128 UTF-8 bytes, no NUL/control characters), through the shared encrypted
+`mqtt-config` credential endpoint before Wi-Fi configuration. Its JSON response
+confirms `ok` and `persisted`; failure stops provisioning. The name is stored
+separately as `ezcam/name`, preserving the existing Wi-Fi record and factory
+identity. Read the name through vendor resource `/31029/0/7`. Device model and
+serial remain `/3/0/1` and `/3/0/2`; the endpoint remains the factory serial.
+Older firmware without this capability keeps its existing provisioning path.

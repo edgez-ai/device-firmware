@@ -27,6 +27,7 @@ int board_voltage_read(double *volts)
 {
     voltage_reads++; if (voltage_error) return voltage_error; *volts = supply; return 0;
 }
+const char *board_device_model(void) { return "EZ-DEV54-GPS"; }
 const char *board_device_serial(void) { return "factory-test-serial"; }
 const char *board_device_software(void) { return "Zephyr-test"; }
 uint32_t board_memory_free_kb(void) { return 55; }
@@ -192,13 +193,14 @@ int main(int argc, char **argv)
     } else if (test == 15) {
         int count=0;lwm2m_data_t *data=NULL;
         assert(halow_device.readFunc(&ctx,0,&count,&data,&halow_device)==COAP_205_CONTENT);
-        assert(voltage_reads==1);bool have_voltage=false,have_percent=false,have_serial=false;
+        assert(voltage_reads==1);bool have_voltage=false,have_percent=false,have_serial=false,have_model=false;
         for(int i=0;i<count;i++) {
             have_voltage|=data[i].id==7;have_percent|=data[i].id==9;
+            if(data[i].id==1) {have_model=true;assert(data[i].value.asBuffer.length==strlen("EZ-DEV54-GPS") && !memcmp(data[i].value.asBuffer.buffer,"EZ-DEV54-GPS",strlen("EZ-DEV54-GPS")));}
             if(data[i].id==2) {have_serial=true;assert(data[i].value.asBuffer.length==strlen("factory-test-serial"));}
             assert(data[i].id!=8 && data[i].id!=13 && data[i].id!=22);
         }
-        assert(have_voltage && have_percent && have_serial);free_data(count,data);
+        assert(have_voltage && have_percent && have_serial && have_model);free_data(count,data);
     } else if (test == 16) {
         setup(&ctx,&obs,&watcher,&server,3,13);
         assert(halow_device_step(&ctx)==-1); /* UTC not initialized */

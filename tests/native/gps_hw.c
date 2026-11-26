@@ -1,10 +1,12 @@
 #include "gps_hw_shim.h"
 #include "gps_hw.h"
+#include "gps_diagnostics.h"
 #include "hardware_memory.h"
 #include <assert.h>
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
+int64_t k_uptime_get(void) { return 1234; }
 struct device gps_uart_device;
 struct pinctrl_dev_config gps_pins;
 static bool power,asleep,rx,isr,controller_active,no_workspace;
@@ -65,6 +67,7 @@ int main(int argc,char **argv) {
   assert(rc==0 && power && rx && !asleep && callback && init_count==1);
   isr=true;fifo_has_data=true;callback(&gps_uart_device,NULL);isr=false;
   assert(wakes==0 && pending);pending->handler(pending);assert(wakes==1);
+  assert(gps_uart_diagnostics.first_rx_ms == 1234 && gps_uart_diagnostics.received_bytes == 3 && gps_uart_diagnostics.dropped_bytes == 0);
   uint8_t data[8];assert(gps_hw_read(data,sizeof data)==3 && !memcmp(data,"abc",3));
   assert(gps_hw_stop()==0 && !power && asleep && !rx && !controller_active);
   assert(gps_hw_start()==0 && init_count==1 && power && rx && !asleep);

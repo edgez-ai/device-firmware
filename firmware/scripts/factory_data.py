@@ -10,6 +10,7 @@ import hashlib
 import hmac
 import json
 import os
+import re
 from pathlib import Path
 import shutil
 import struct
@@ -27,6 +28,7 @@ HARDWARE_OFFSET = 256
 HARDWARE_MAGIC = 0x57485a45
 MOTION_OFFSET = 272
 MOTION_MAGIC = 0x4d505a45
+MODEL_OFFSET, MODEL_SIZE, MODEL_MAGIC = 288, 48, 0x444d5a45
 
 
 def secret_write(path, data):
@@ -49,6 +51,9 @@ def validate(record):
     if not record['serial']:
         raise ValueError('Serial must not be empty')
     text_field(record['serial'], 32, 'Serial')
+    if 'model' in record and (not record['model'] or any(ord(c) < 32 or ord(c) > 126 for c in record['model'])):
+        raise ValueError('Model must be nonempty printable ASCII')
+    if 'model' in record: text_field(record['model'], 32, 'Model')
     country = record['country']
     if len(country) != 2 or not country.isascii() or not country.isalpha() or not country.isupper():
         raise ValueError('Country must contain two uppercase ASCII letters')
@@ -91,6 +96,13 @@ def decode(data):
     if (magic, ver, size) == (MOTION_MAGIC, 3, 16) and 5 <= mg <= 180 and angle in (50, 60, 70, 80) and reserved == 0 and zlib.crc32(extension[:12]) == crc:
         record['gyro_threshold_dps'] = mg
         record['pose_interrupt_deg'] = angle
+    extension = data[MODEL_OFFSET:MODEL_OFFSET+MODEL_SIZE]
+    magic, ver, size, model, reserved, crc = struct.unpack('<IHH33s3sI', extension)
+    if (magic, ver, size) == (MODEL_MAGIC, 1, MODEL_SIZE) and reserved == bytes(3) and zlib.crc32(extension[:44]) == crc:
+        try:
+            value = string(model)
+            if value and all(32 <= ord(c) <= 126 for c in value): record['model'] = value
+        except (ValueError, UnicodeError): pass
     return record
 
 
@@ -121,17 +133,23 @@ def encode(record, original=None):
             prefix = struct.pack('<IHHHBB', MOTION_MAGIC, 3, 16, record.get('gyro_threshold_dps', 30), record.get('pose_interrupt_deg', 60), 0)
             extension = prefix + struct.pack('<I', zlib.crc32(prefix))
         page[MOTION_OFFSET:MOTION_OFFSET+16] = extension
+    if 'model' in record:
+        old = page[MODEL_OFFSET:MODEL_OFFSET+MODEL_SIZE]
+        if old not in (bytes(MODEL_SIZE), b'\xff'*MODEL_SIZE) and struct.unpack('<I', old[:4])[0] != MODEL_MAGIC:
+            raise ValueError('Model extension overlaps unknown factory data')
+        prefix = struct.pack('<IHH33s3s', MODEL_MAGIC, 1, MODEL_SIZE, record['model'].encode(), bytes(3))
+        page[MODEL_OFFSET:MODEL_OFFSET+MODEL_SIZE] = prefix + struct.pack('<I', zlib.crc32(prefix))
     return bytes(page)
 
 
 def ble_qr(record):
-    return dict(ver='v1', name='PROV_CAM' + hashlib.sha256(record['public_key']).hexdigest()[:6],
+    return dict(ver='v1', name='EZ_' + record['serial'],
                 pop=hmac.new(record['private_key'], LABEL, hashlib.sha256).hexdigest()[:32], transport='ble')
 
 
 def summary(record):
     # Never expose credentials, PoP or private key on stdout.
-    return dict(serial=record['serial'], country=record['country'], channel=record['channel'],
+    return dict(serial=record['serial'], model=record.get('model', 'EZ-DEV54'), country=record['country'], channel=record['channel'],
                 factory_wifi=bool(record['ssid']), gyro_threshold_dps=record.get('gyro_threshold_dps') or 30, pose_interrupt_deg=record.get('pose_interrupt_deg', 60), hardware=record.get('hardware', 'base (default)'), public_key_sha256=hashlib.sha256(record['public_key']).hexdigest(),
                 ble_name=ble_qr(record)['name'])
 
@@ -155,6 +173,16 @@ def run_jlink(script, serial, log):
         if result.returncode or 'Cannot connect' in output or 'Error while' in output or 'Failed' in output:
             raise RuntimeError(f'J-Link failed; inspect {log}')
         return output
+
+
+def check_replacement(previous, record, previous_serial=None):
+    if any(previous[k] != record[k] for k in ('public_key', 'private_key')):
+        raise ValueError('Identity keys differ; refusing to replace identity keys')
+    if previous['serial'] != record['serial']:
+        if previous_serial != previous['serial']:
+            raise ValueError('Serial differs; name the exact old serial with --previous-serial to authorize replacement')
+        if not re.fullmatch(r'[0-9A-F]{12}', record['serial']):
+            raise ValueError('Replacement serial must contain exactly 12 uppercase hex characters')
 
 
 def flash(args):
@@ -181,8 +209,7 @@ def flash(args):
         previous = decode(before)  # Fail closed on unknown layout/corruption.
         if not args.replace:
             raise ValueError('Existing valid factory data; use --replace for an explicit update')
-        if any(previous[k] != record[k] for k in ('serial', 'public_key', 'private_key')):
-            raise ValueError('Identity differs; refusing to replace serial or identity keys')
+        check_replacement(previous, record, args.previous_serial)
     log = folder / f'{stamp}-flash.log'
     output = run_jlink(f'r\nloadbin "{image}" 0x{ADDRESS:x}\nverifybin "{image}" 0x{ADDRESS:x}\nr\ng\nexit\n', args.serial, log)
     if 'Verify successful' not in output:
@@ -202,8 +229,10 @@ def main():
             cmd.add_argument('--channel', type=int, default=1)
         else:
             cmd.add_argument('--input', type=Path, required=True)
+            cmd.add_argument('--serial', help='Explicit replacement serial: 12 hex characters; existing serial is otherwise preserved')
             cmd.add_argument('--country')
             cmd.add_argument('--channel', type=int)
+        cmd.add_argument('--model', default='EZ-DEV54-GPS' if name == 'create' else None, help='Factory model, up to 32 printable ASCII characters')
         hardware = cmd.add_mutually_exclusive_group()
         hardware.add_argument('--hardware', choices=HARDWARE)
         hardware.add_argument('--clear-hardware', action='store_true')
@@ -221,6 +250,7 @@ def main():
         if name == 'qr': cmd.add_argument('--output', type=Path, required=True, help='Private JSON payload accepted by ESP BLE Prov QR scanner')
         if name == 'flash':
             cmd.add_argument('--serial', required=True, help='J-Link probe serial')
+            cmd.add_argument('--previous-serial', help='Exact existing device serial, required only for an intentional serial change; keys must remain unchanged')
             cmd.add_argument('--replace', action='store_true')
             cmd.add_argument('--backup-dir', type=Path, required=True)
     args = parser.parse_args()
@@ -242,6 +272,11 @@ def main():
             original = args.input.read_bytes(); record = decode(original)
             if args.country: record['country'] = args.country
             if args.channel is not None: record['channel'] = args.channel
+        if args.serial is not None:
+            value = args.serial.upper()
+            if not re.fullmatch(r'[0-9A-F]{12}', value): raise ValueError('Serial must contain exactly 12 hex characters')
+            record['serial'] = value
+        if args.model is not None: record['model'] = args.model
         if args.hardware is not None: record['hardware'] = args.hardware
         if args.clear_hardware: record['hardware'] = None
         if args.gyro_threshold_dps is not None: record['gyro_threshold_dps'] = args.gyro_threshold_dps

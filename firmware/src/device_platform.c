@@ -21,10 +21,10 @@ const char *board_device_serial(void)
 {
 #if defined(CONFIG_EZ_DEV54_FACTORY_DATA)
 	const struct ez_factory_data *factory = ez_factory_get();
-	if (factory) return factory->serial;
+	if (factory) return ez_factory_device_serial();
 #endif
 	if (!serial[0]) {
-		uint8_t id[8];
+		uint8_t id[6];
 		ssize_t count = hwinfo_get_device_id(id, sizeof(id));
 		if (count <= 0) return "unavailable";
 		char *p = serial;
@@ -35,6 +35,14 @@ const char *board_device_serial(void)
 		*p = 0;
 	}
 	return serial;
+}
+const char *board_device_model(void)
+{
+#if defined(CONFIG_EZ_DEV54_FACTORY_DATA)
+	return ez_factory_model();
+#else
+	return "EZ-DEV54";
+#endif
 }
 const char *board_device_software(void) { return "Zephyr " KERNEL_VERSION_STRING; }
 uint32_t board_memory_total_kb(void)

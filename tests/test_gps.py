@@ -36,7 +36,9 @@ class Gps(unittest.TestCase):
                             '-I'+str(ROOT/'third_party/wakaama/include'),
                             str(ROOT/'firmware/src/halow_gps.c'), str(ROOT/'firmware/src/gps_nmea.c'),
                             str(ROOT/'tests/native/gps.c'), '-lm', '-o', str(binary)], check=True)
-            subprocess.run([str(binary)], check=True)
+            for args in ([], ['hold-cancel'], ['hold-error']):
+                with self.subTest(args=args):
+                    subprocess.run([str(binary), *args], check=True)
 
 
 if __name__ == '__main__':

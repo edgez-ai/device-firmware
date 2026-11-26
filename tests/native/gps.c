@@ -1,6 +1,7 @@
 /* Actual GPS object and NMEA parser, fake UART/power/clock boundary. */
 #include "halow_gps.h"
 #include "gps_nmea.h"
+#include "gps_diagnostics.h"
 #include "gps_hw.h"
 #include <assert.h>
 #include <errno.h>
@@ -32,7 +33,7 @@ int lwm2m_data_decode_int(const lwm2m_data_t *d,int64_t *value) {
 }
 void lwm2m_resource_value_changed(lwm2m_context_t *ctx,lwm2m_uri_t *uri) {
     assert(ctx && (uri->objectId==6 || uri->objectId==31028));
-    if(uri->objectId==6)assert(!powered);
+    /* A completed fix is readable even while first-fix tracking stays powered. */
 }
 static void sentence(char *out,size_t capacity,const char *body) {
     unsigned int sum=0;for(const char *p=body;*p;++p)sum^=(unsigned char)*p;
@@ -51,7 +52,7 @@ static uint8_t timeout(lwm2m_context_t *ctx,int64_t seconds) {
     return halow_gps_control.writeFunc(ctx,0,1,&d,&halow_gps_control,LWM2M_WRITE_REPLACE_RESOURCES);
 }
 static bool parse(const char *body,struct gps_fix *fix) {char line[256];sentence(line,sizeof line,body);return gps_nmea_fix(line,fix);}
-int main(void) {
+int main(int argc, char **argv) {
     struct gps_fix fix;
     assert(parse(rmc,&fix));
     assert(fabs(fix.latitude-48.1173)<1e-8 && fabs(fix.longitude-11.5166666667)<1e-8);
@@ -71,6 +72,26 @@ int main(void) {
     assert(!gps_nmea_fix("$GPRMC*00junk",&fix));
     lwm2m_context_t ctx={0};
     assert(halow_gps_init()==0 && !powered);
+    if (argc > 1) {
+        /* A failed attempt must not consume the first successful fix hold. */
+        assert(timeout(&ctx,10)==COAP_204_CHANGED);
+        assert(execute(&ctx)==COAP_204_CHANGED); halow_gps_step(&ctx,true);
+        now=10000; assert(halow_gps_step(&ctx,true)==-1 && !powered);
+        assert(execute(&ctx)==COAP_204_CHANGED); halow_gps_step(&ctx,true);
+        feed(rmc); assert(halow_gps_step(&ctx,true)==60000 && powered);
+        if (!strcmp(argv[1], "hold-cancel")) {
+            assert(halow_gps_step(NULL,false)==-1 && !powered);
+            assert(control(&ctx,2)==2 && control(&ctx,3)==0 && control(&ctx,6)==1);
+        } else {
+            read_error=-EIO;
+            assert(halow_gps_step(&ctx,true)==-1 && !powered && control(&ctx,2)==4);
+            read_error=0;
+        }
+        assert(execute(&ctx)==COAP_204_CHANGED); halow_gps_step(&ctx,true);
+        feed(rmc); assert(halow_gps_step(&ctx,true)==-1 && !powered);
+        puts("Failed first acquisition retains hold; hold cancellation/error cleans up without repeating hold");
+        return 0;
+    }
     assert(control(&ctx,2)==0 && control(&ctx,4)==-1 && control(&ctx,6)==0 && starts==0);
     int count=0;lwm2m_data_t *data=NULL;
     assert(halow_gps_location.readFunc(&ctx,0,&count,&data,&halow_gps_location)==COAP_503_SERVICE_UNAVAILABLE);free(data);
@@ -83,12 +104,27 @@ int main(void) {
     assert(halow_gps_step(&ctx,true)==10000 && powered);
     feed(rmc); input[input_size-4]^=1; /* Corrupt checksum; no false fix. */
     assert(halow_gps_step(&ctx,true)==10000 && powered);
-    feed(rmc);assert(halow_gps_step(&ctx,true)==-1 && !powered);
+    feed(rmc);assert(halow_gps_step(&ctx,true)==60000 && powered);
     assert(control(&ctx,2)==2 && control(&ctx,3)==0 && control(&ctx,5)==1 && control(&ctx,6)==1);
+    assert(gps_acquisition_diagnostics.lines == 3 && gps_acquisition_diagnostics.rmc_lines == 3);
+    assert(gps_acquisition_diagnostics.active_rmc_lines == 2 && gps_acquisition_diagnostics.rejected_rmc_lines == 2);
+    assert(gps_acquisition_diagnostics.fixed_ms == 0 && gps_acquisition_diagnostics.finished_ms == UINT32_MAX);
+    assert(gps_acquisition_diagnostics.state == 2 && gps_acquisition_diagnostics.result == 0);
     count=0;data=NULL;
     assert(halow_gps_location.readFunc(&ctx,0,&count,&data,&halow_gps_location)==COAP_205_CONTENT && count==3);
     assert(fabs(data[0].value.asFloat-48.1173)<1e-8 && data[2].value.asInteger==764426119);free(data);
     now=12000;assert(control(&ctx,4)==12 && starts==1); /* Reads never restart GPS. */
+    feed(rmc); assert(halow_gps_step(&ctx,true)==48000 && powered);
+    assert(control(&ctx,5)==1 && offset==input_size); /* Drain, without inventing acquisitions. */
+    assert(execute(&ctx)==COAP_204_CHANGED); /* Reuse powered receiver; do not extend hold. */
+    feed(rmc); assert(halow_gps_step(&ctx,true)==48000 && starts==1 && powered);
+    assert(control(&ctx,5)==2 && control(&ctx,4)==0);
+    now=59999; assert(halow_gps_step(&ctx,true)==1 && powered);
+    now=60000; assert(halow_gps_step(&ctx,true)==-1 && !powered);
+    assert(control(&ctx,2)==2 && gps_acquisition_diagnostics.finished_ms==60000);
+    assert(execute(&ctx)==COAP_204_CHANGED); halow_gps_step(&ctx,true);
+    feed(rmc); assert(halow_gps_step(&ctx,true)==-1 && !powered && starts==2);
+    assert(control(&ctx,5)==3); /* Later fixes power down immediately. */
     assert(execute(&ctx)==COAP_204_CHANGED);assert(halow_gps_step(&ctx,true)==10000);
     now+=10000;assert(halow_gps_step(&ctx,true)==-1 && !powered);
     assert(control(&ctx,2)==3 && control(&ctx,3)==-ETIMEDOUT && control(&ctx,6)==1);
@@ -100,6 +136,6 @@ int main(void) {
     assert(halow_gps_step(&ctx,true)==-1 && !powered);read_error=0;
     assert(execute(&ctx)==COAP_204_CHANGED);halow_gps_step(&ctx,true);
     assert(halow_gps_step(NULL,false)==-1 && !powered); /* Context loss cancels. */
-    assert(stops>=starts && control(&ctx,5)==1);
+    assert(stops>=starts && control(&ctx,5)==3);
     puts("GPS checksum/coordinates/UTC, cached resources, deferred power, timeout and WNM/context cancellation passed");
 }

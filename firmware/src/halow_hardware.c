@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #include "halow_hardware.h"
 #include "hardware_config.h"
+#include "ble_prov.h"
 #include <errno.h>
 static uint8_t discover(lwm2m_context_t *ctx, uint16_t instance, int *count,
                         lwm2m_data_t **data, lwm2m_object_t *object)
@@ -8,10 +9,10 @@ static uint8_t discover(lwm2m_context_t *ctx, uint16_t instance, int *count,
     (void)ctx; (void)object;
     if (instance) return COAP_404_NOT_FOUND;
     if (!*count) {
-        *data = lwm2m_data_new(7); if (!*data) return COAP_500_INTERNAL_SERVER_ERROR;
-        *count = 7; for (int i = 0; i < 7; ++i) (*data)[i].id = i;
+        *data = lwm2m_data_new(8); if (!*data) return COAP_500_INTERNAL_SERVER_ERROR;
+        *count = 8; for (int i = 0; i < 8; ++i) (*data)[i].id = i;
     }
-    for (int i = 0; i < *count; ++i) if ((*data)[i].id > 6) return COAP_404_NOT_FOUND;
+    for (int i = 0; i < *count; ++i) if ((*data)[i].id > 7) return COAP_404_NOT_FOUND;
     return COAP_205_CONTENT;
 }
 static uint8_t read_config(lwm2m_context_t *ctx, uint16_t instance, int *count,
@@ -19,10 +20,10 @@ static uint8_t read_config(lwm2m_context_t *ctx, uint16_t instance, int *count,
 {
     if (!*count) {
         if (instance) return COAP_404_NOT_FOUND;
-        *data = lwm2m_data_new(6); if (!*data) return COAP_500_INTERNAL_SERVER_ERROR;
-        *count = 6;
-        const uint16_t ids[] = {0,1,2,3,4,6};
-        for (int i = 0; i < 6; ++i) (*data)[i].id = ids[i];
+        *data = lwm2m_data_new(7); if (!*data) return COAP_500_INTERNAL_SERVER_ERROR;
+        *count = 7;
+        const uint16_t ids[] = {0,1,2,3,4,6,7};
+        for (int i = 0; i < 7; ++i) (*data)[i].id = ids[i];
     }
     uint8_t rc = discover(ctx, instance, count, data, object);
     if (rc != COAP_205_CONTENT) return rc;
@@ -31,7 +32,14 @@ static uint8_t read_config(lwm2m_context_t *ctx, uint16_t instance, int *count,
     for (int i = 0; i < *count; ++i) {
         uint16_t rid = (*data)[i].id;
         if (rid == 5) return COAP_405_METHOD_NOT_ALLOWED;
-        if (rid == 4) lwm2m_data_encode_bool(values[rid], &(*data)[i]);
+        if (rid == 7) {
+#if defined(CONFIG_EZ_DEV54_BLE_PROV)
+            lwm2m_data_encode_string(ez_prov_device_name(), &(*data)[i]);
+#else
+            lwm2m_data_encode_string("", &(*data)[i]);
+#endif
+        }
+        else if (rid == 4) lwm2m_data_encode_bool(values[rid], &(*data)[i]);
         else lwm2m_data_encode_int(values[rid], &(*data)[i]);
     }
     return rc;
@@ -42,7 +50,7 @@ static uint8_t write_config(lwm2m_context_t *ctx, uint16_t instance, int count,
     (void)ctx; (void)object; (void)type;
     if (instance) return COAP_404_NOT_FOUND;
     if (count != 1) return COAP_400_BAD_REQUEST;
-    if (data[0].id) return data[0].id <= 6 ? COAP_405_METHOD_NOT_ALLOWED : COAP_404_NOT_FOUND;
+    if (data[0].id) return data[0].id <= 7 ? COAP_405_METHOD_NOT_ALLOWED : COAP_404_NOT_FOUND;
     int64_t mode;
     if (!lwm2m_data_decode_int(data, &mode) || mode < 0 || mode > 3) return COAP_400_BAD_REQUEST;
     return hardware_config_set((int)mode) ? COAP_500_INTERNAL_SERVER_ERROR : COAP_204_CHANGED;
@@ -51,7 +59,7 @@ static uint8_t execute_config(lwm2m_context_t *ctx, uint16_t instance, uint16_t 
                               uint8_t *buffer, int length, lwm2m_object_t *object)
 {
     (void)ctx; (void)buffer; (void)object;
-    if (instance || resource > 6) return COAP_404_NOT_FOUND;
+    if (instance || resource > 7) return COAP_404_NOT_FOUND;
     if (resource != 5) return COAP_405_METHOD_NOT_ALLOWED;
     if (length) return COAP_400_BAD_REQUEST;
     return hardware_config_clear() ? COAP_500_INTERNAL_SERVER_ERROR : COAP_204_CHANGED;

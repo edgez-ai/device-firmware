@@ -7,7 +7,7 @@
 
 #define PROV_PACKET_MAX 512
 #define PROV_SCAN_MAX 8
-enum prov_endpoint { PROV_SESSION, PROV_CONFIG, PROV_SCAN, PROV_VERSION };
+enum prov_endpoint { PROV_SESSION, PROV_CONFIG, PROV_SCAN, PROV_VERSION, PROV_MQTT_CONFIG };
 struct prov_ap {
 	uint8_t ssid[32], ssid_len, bssid[6], auth;
 	uint32_t channel;
@@ -31,6 +31,7 @@ struct prov_ops {
 	int (*scan)(void *, bool, bool);
 	void (*scan_status)(void *, bool *, uint32_t *);
 	int (*scan_result)(void *, uint32_t, struct prov_ap *);
+	int (*mqtt_config)(void *, const uint8_t *, size_t);
 };
 struct prov_protocol {
 	const struct prov_ops *ops;

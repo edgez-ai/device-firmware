@@ -3,7 +3,6 @@
  */
 #include "halow_device.h"
 #include "hardware_config.h"
-#define EZ_DEV54_MODEL "EZ-DEV54"
 #define EZ_DEV54_TYPE hardware_type_name()
 #include "halow_sensors.h"
 #include "sensors_hw.h"
@@ -88,7 +87,7 @@ static uint8_t read_device(lwm2m_context_t *ctx, uint16_t instance, int *count,
 		lwm2m_data_t *r = &(*data)[i];
 		switch (r->id) {
 		case 0: lwm2m_data_encode_string("EdgeZ.ai", r); break;
-		case 1: lwm2m_data_encode_string(EZ_DEV54_MODEL, r); break;
+		case 1: lwm2m_data_encode_string(board_device_model(), r); break;
 		case 2: lwm2m_data_encode_string(board_device_serial(), r); break;
 		case 3: lwm2m_data_encode_string(EZ_DEV54_APP_REV, r); break;
 		case 6: if (multi_integer(r, 1)) return COAP_500_INTERNAL_SERVER_ERROR; break;
