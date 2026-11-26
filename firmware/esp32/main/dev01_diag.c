@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: Apache-2.0 */
+#include "dev01_board.h"
 #include "dev01_diag.h"
 #include "dev01_power.h"
 #include "dev01.h"
@@ -91,7 +92,7 @@ static uint8_t read_diag(lwm2m_context_t *ctx, uint16_t id, int *count,
   for (int i = 0; i < *count; i++)
     switch ((*data)[i].id) {
     case 5500:
-      lwm2m_data_encode_bool(!gpio_get_level(GPIO_NUM_0), *data + i);
+      lwm2m_data_encode_bool(!gpio_get_level(DEV01_BUTTON_GPIO), *data + i);
       break;
     case 5501:
       lwm2m_data_encode_int(dev01_button_presses(), *data + i);

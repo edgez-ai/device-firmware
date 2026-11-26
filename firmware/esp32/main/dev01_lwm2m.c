@@ -1,4 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
+#include "dev01_led.h"
+#include "dev01_observe.h"
 #include "dev01.h"
 #include "dev01_diag.h"
 #include "dev01_sleep.h"
@@ -195,13 +197,15 @@ static void client_task(void *arg) {
     lwm2m_object_t *objects[] = {
         get_security_object(1, uri, NULL, NULL, 0, false),
         get_server_object(1, "U", 300, false), &device, &hardware,
-        dev01_diag_object(), dev01_sleep_object()};
+        dev01_diag_object(), dev01_sleep_object(), dev01_led_object()};
     lwm2m_context_t *context = lwm2m_init(&session);
     bool ready =
         context && objects[0] && objects[1] &&
         lwm2m_configure(context, dev01_identity.serial, NULL, NULL,
                         sizeof(objects) / sizeof(objects[0]), objects) == 0;
+    const int changed_fd = dev01_observe_fd();
     while (ready) {
+      dev01_observe_step(context);
       dev01_sleep_step(context, context->state == STATE_READY &&
                                mmwlan_get_sta_state() == MMWLAN_STA_CONNECTED);
       if (current_server(netif) != session.server.sin_addr.s_addr)
@@ -212,12 +216,14 @@ static void client_task(void *arg) {
       fd_set read;
       FD_ZERO(&read);
       FD_SET(session.socket, &read);
+      FD_SET(changed_fd, &read);
       struct timeval wait = {.tv_sec = timeout < 1 ? 0 : 1,
                              .tv_usec = timeout < 1 ? 10000 : 0};
-      int result = select(session.socket + 1, &read, NULL, NULL, &wait);
+      int max_fd = session.socket > changed_fd ? session.socket : changed_fd;
+      int result = select(max_fd + 1, &read, NULL, NULL, &wait);
       if (result < 0 && errno != EINTR)
         break;
-      if (result > 0) {
+      if (result > 0 && FD_ISSET(session.socket, &read)) {
         uint8_t buffer[1536];
         struct sockaddr_in from;
         socklen_t length = sizeof(from);

@@ -1,4 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
+#include "dev01_board.h"
+#include "dev01_observe.h"
 #include "dev01.h"
 #include "dev01_power.h"
 #include "dev01_sleep.h"
@@ -232,26 +234,33 @@ void dev01_reboot(bool forget_wifi) {
 }
 static void button_task(void *arg) {
   (void)arg;
-  gpio_config_t config = {.pin_bit_mask = 1ULL << GPIO_NUM_0,
+  gpio_config_t config = {.pin_bit_mask = 1ULL << DEV01_BUTTON_GPIO,
                           .mode = GPIO_MODE_INPUT,
                           .pull_up_en = GPIO_PULLUP_ENABLE};
   ESP_ERROR_CHECK(gpio_config(&config));
   /* A held wake button must be released before it can request a reset. */
-  while (!gpio_get_level(GPIO_NUM_0))
+  while (!gpio_get_level(DEV01_BUTTON_GPIO))
     vTaskDelay(pdMS_TO_TICKS(50));
   unsigned held = 0;
   for (;;) {
-    bool pressed = !gpio_get_level(GPIO_NUM_0);
+    bool pressed = !gpio_get_level(DEV01_BUTTON_GPIO);
+    if (pressed != (held != 0))
+      dev01_observe_changed(DEV01_CHANGED_BUTTON);
+    /* Toggle once on short-click release; long holds keep reset behavior. */
+    if (!pressed && held)
+      dev01_led_toggle();
     if (pressed && !held) {
       xSemaphoreTake(lock, portMAX_DELAY);
       if (button_presses < UINT32_MAX)
         button_presses++;
       xSemaphoreGive(lock);
+      dev01_observe_changed(DEV01_CHANGED_PRESS_COUNT);
     }
     held = pressed ? held + 1 : 0;
     if (held >= 100) {
-      while (!gpio_get_level(GPIO_NUM_0))
+      while (!gpio_get_level(DEV01_BUTTON_GPIO))
         vTaskDelay(pdMS_TO_TICKS(50));
+      dev01_led_off();
       dev01_reboot(true);
       vTaskDelete(NULL);
     }
@@ -259,20 +268,23 @@ static void button_task(void *arg) {
   }
 }
 static void standby(void) {
+  dev01_led_off();
   if (radio_ready)
     (void)mmhalow_deinit();
   gpio_set_direction(CONFIG_MM_RESET_N, GPIO_MODE_OUTPUT);
   gpio_set_level(CONFIG_MM_RESET_N, 0);
   gpio_hold_en(CONFIG_MM_RESET_N);
   gpio_deep_sleep_hold_en();
-  while (!gpio_get_level(GPIO_NUM_0))
+  while (!gpio_get_level(DEV01_BUTTON_GPIO))
     vTaskDelay(pdMS_TO_TICKS(50));
   esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL);
-  esp_sleep_enable_ext1_wakeup_io(1ULL << 0, ESP_EXT1_WAKEUP_ANY_LOW);
+  esp_sleep_enable_ext1_wakeup_io(1ULL << DEV01_BUTTON_GPIO, ESP_EXT1_WAKEUP_ANY_LOW);
   esp_deep_sleep_start();
 }
 void app_main(void) {
   dev01_sleep_boot();
+  dev01_observe_init();
+  dev01_led_init();
   ESP_ERROR_CHECK(nvs_flash_init());
   ESP_ERROR_CHECK(edgez_esp_factory_data_init());
   ESP_ERROR_CHECK(edgez_esp_factory_data_get(&dev01_identity));

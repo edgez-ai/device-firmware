@@ -1,17 +1,17 @@
 # Dependency discovery precedes Kconfig and runs in CMake script mode.
 if(CMAKE_SCRIPT_MODE_FILE)
     idf_component_register(PRIV_REQUIRES halow bt esp_wifi esp_event esp_netif
-        esp_timer esp_pm esp_app_format esp_driver_gpio esp_driver_uart esp_hw_support nvs_flash spi_flash esp_partition mbedtls json)
+        esp_timer esp_pm esp_app_format esp_driver_gpio esp_driver_rmt esp_driver_uart esp_hw_support vfs nvs_flash spi_flash esp_partition mbedtls json)
     return()
 endif()
 set(common "${CMAKE_CURRENT_LIST_DIR}/../../src")
 set(wakaama "${CMAKE_CURRENT_LIST_DIR}/../../../third_party/wakaama")
 file(GLOB wakaama_sources CONFIGURE_DEPENDS "${wakaama}/core/*.c" "${wakaama}/data/*.c" "${wakaama}/coap/*.c" "${wakaama}/coap/er-coap-13/*.c")
-idf_component_register(SRCS "dev01_main.c" "dev01_ble.c" "dev01_lwm2m.c" "dev01_scan.c" "dev01_diag.c" "dev01_diag_format.c" "dev01_power.c" "dev01_sleep.c" "edgez_esp_factory_data.c"
+idf_component_register(SRCS "dev01_main.c" "dev01_ble.c" "dev01_lwm2m.c" "dev01_scan.c" "dev01_diag.c" "dev01_diag_format.c" "dev01_power.c" "dev01_sleep.c" "dev01_led.c" "dev01_observe.c" "edgez_esp_factory_data.c"
  "${common}/factory_record.c" "${common}/prov_protocol.c" "${common}/companion_protocol.c" ${wakaama_sources}
  "${wakaama}/examples/client/common/object_security.c" "${wakaama}/examples/client/common/object_server.c"
  INCLUDE_DIRS "include" "${common}" "${wakaama}/include" "${wakaama}/core" "${wakaama}/coap" "${wakaama}/examples/client/common"
- PRIV_REQUIRES halow bt esp_wifi esp_event esp_netif esp_timer esp_pm esp_app_format esp_driver_gpio esp_driver_uart esp_hw_support nvs_flash spi_flash esp_partition mbedtls json)
+ PRIV_REQUIRES halow bt esp_wifi esp_event esp_netif esp_timer esp_pm esp_app_format esp_driver_gpio esp_driver_rmt esp_driver_uart esp_hw_support vfs nvs_flash spi_flash esp_partition mbedtls json)
 target_compile_definitions(${COMPONENT_LIB} PRIVATE LWM2M_CLIENT_MODE LWM2M_LITTLE_ENDIAN LWM2M_SUPPORT_TLV LWM2M_SUPPORT_JSON LWM2M_SUPPORT_SENML_JSON LWM2M_COAP_DEFAULT_BLOCK_SIZE=256 LWM2M_COAP_MAX_MESSAGE_SIZE=1024 LWM2M_COAP_DEFAULT_MAX_RETRANSMIT=4 LWM2M_COAP_SEPARATE_TIMEOUT=15)
 # Keep the upstream netif/driver implementation; select the factory region
 # before boot instead of briefly starting RF in a compiled default domain.

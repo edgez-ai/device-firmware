@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: Apache-2.0 */
+#include "dev01_board.h"
 #include "dev01_power.h"
 #include "freertos/FreeRTOS.h"
 #include "driver/gpio.h"
@@ -58,7 +59,7 @@ static esp_err_t after_sleep(int64_t elapsed_us, void *arg) {
   (void)arg;
   /* EXT wakeup temporarily routes these RTC-capable pins away from GPIO. */
   rtc_gpio_deinit(CONFIG_MM_BUSY);
-  rtc_gpio_deinit(GPIO_NUM_0);
+  rtc_gpio_deinit(DEV01_BUTTON_GPIO);
   /* An edge arriving while BUSY was RTC-routed can be absent from the
    * digital edge latch. Pend the normal GPIO ISR after restoring routing;
    * its FreeRTOS FromISR callback must run in real interrupt context. */
@@ -85,12 +86,12 @@ void dev01_power_init(void) {
 }
 void dev01_power_restore_wake(void) {
 #if CONFIG_EZ_DEV01_AUTO_SLEEP
-  ESP_ERROR_CHECK(rtc_gpio_pullup_en(GPIO_NUM_0));
-  ESP_ERROR_CHECK(rtc_gpio_pulldown_dis(GPIO_NUM_0));
+  ESP_ERROR_CHECK(rtc_gpio_pullup_en(DEV01_BUTTON_GPIO));
+  ESP_ERROR_CHECK(rtc_gpio_pulldown_dis(DEV01_BUTTON_GPIO));
   ESP_ERROR_CHECK(gpio_pulldown_dis(CONFIG_MM_BUSY));
   ESP_ERROR_CHECK(esp_sleep_enable_ext1_wakeup_io(
       UINT64_C(1) << CONFIG_MM_BUSY, ESP_EXT1_WAKEUP_ANY_HIGH));
-  ESP_ERROR_CHECK(esp_sleep_enable_ext0_wakeup(GPIO_NUM_0, 0));
+  ESP_ERROR_CHECK(esp_sleep_enable_ext0_wakeup(DEV01_BUTTON_GPIO, 0));
 #endif
 }
 void dev01_power_start(void) {

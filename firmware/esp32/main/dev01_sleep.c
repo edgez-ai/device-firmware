@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0
  * HC33 implementation of the EZ-DEV54 one-shot WNM sleep object 31026.
  */
+#include "dev01_board.h"
 #include "dev01_sleep.h"
 #include "dev01.h"
 #include "dev01_sleep_request.h"
@@ -44,15 +45,15 @@ static netif_linkoutput_fn previous_output;
 static int64_t now_ms(void) { return (int64_t)(esp_rtc_get_time_us() / 1000); }
 #define RETAINED_MAGIC UINT32_C(0x534c5031)
 static const gpio_num_t held_pins[] = {CONFIG_MM_RESET_N, CONFIG_MM_WAKE,
-    CONFIG_MM_SPI_CS, CONFIG_MM_SPI_SCK, CONFIG_MM_SPI_MOSI, GPIO_NUM_20};
+    CONFIG_MM_SPI_CS, CONFIG_MM_SPI_SCK, CONFIG_MM_SPI_MOSI, GPIO_NUM_20, DEV01_LED_GPIO};
 void dev01_sleep_boot(void) {
   esp_sleep_wakeup_cause_t cause = esp_sleep_get_wakeup_cause();
   bool waking = esp_reset_reason() == ESP_RST_DEEPSLEEP &&
                 retained_magic == RETAINED_MAGIC && deep_pending;
   /* Release every held output before SPI/radio or board drivers initialize. */
   gpio_deep_sleep_hold_dis();
-  ESP_ERROR_CHECK(rtc_gpio_hold_dis(GPIO_NUM_0));
-  ESP_ERROR_CHECK(rtc_gpio_deinit(GPIO_NUM_0));
+  ESP_ERROR_CHECK(rtc_gpio_hold_dis(DEV01_BUTTON_GPIO));
+  ESP_ERROR_CHECK(rtc_gpio_deinit(DEV01_BUTTON_GPIO));
   for (unsigned i = 0; i < sizeof(held_pins)/sizeof(held_pins[0]); ++i)
     ESP_ERROR_CHECK(gpio_hold_dis(held_pins[i]));
   if (!waking) {
@@ -142,13 +143,14 @@ static esp_err_t park_radio(void) {
   return gpio_set_level(CONFIG_MM_SPI_MOSI, 0);
 }
 static esp_err_t mcu_sleep(void) {
+  dev01_led_off();
   esp_err_t rc = esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL);
   if (rc != ESP_OK) return rc;
   rc = esp_sleep_enable_timer_wakeup((uint64_t)requested_s * 1000000);
   if (rc != ESP_OK) return rc;
-  ESP_ERROR_CHECK(rtc_gpio_pullup_en(GPIO_NUM_0));
-  ESP_ERROR_CHECK(rtc_gpio_pulldown_dis(GPIO_NUM_0));
-  rc = esp_sleep_enable_ext1_wakeup_io(UINT64_C(1), ESP_EXT1_WAKEUP_ANY_LOW);
+  ESP_ERROR_CHECK(rtc_gpio_pullup_en(DEV01_BUTTON_GPIO));
+  ESP_ERROR_CHECK(rtc_gpio_pulldown_dis(DEV01_BUTTON_GPIO));
+  rc = esp_sleep_enable_ext1_wakeup_io(UINT64_C(1) << DEV01_BUTTON_GPIO, ESP_EXT1_WAKEUP_ANY_LOW);
   if (rc != ESP_OK) {
     (void)esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL);
     return rc;
@@ -158,7 +160,8 @@ static esp_err_t mcu_sleep(void) {
    * Flash/PSRAM pads are owned by IDF and must not be reconfigured here. */
   uint64_t low = (UINT64_C(1) << CONFIG_MM_RESET_N) |
       (UINT64_C(1) << CONFIG_MM_WAKE) | (UINT64_C(1) << CONFIG_MM_SPI_SCK) |
-      (UINT64_C(1) << CONFIG_MM_SPI_MOSI) | (UINT64_C(1) << GPIO_NUM_20);
+      (UINT64_C(1) << CONFIG_MM_SPI_MOSI) | (UINT64_C(1) << GPIO_NUM_20) |
+      (UINT64_C(1) << DEV01_LED_GPIO);
   uint64_t high = UINT64_C(1) << CONFIG_MM_SPI_CS;
   gpio_config_t output = {.pin_bit_mask = low | high, .mode = GPIO_MODE_OUTPUT};
   ESP_ERROR_CHECK(gpio_config(&output));
@@ -171,7 +174,7 @@ static esp_err_t mcu_sleep(void) {
   uart_wait_tx_idle_polling(CONFIG_ESP_CONSOLE_UART_NUM);
   uint64_t unused = 0;
   for (int pin = 0; pin < GPIO_NUM_MAX; ++pin) {
-    if (!GPIO_IS_VALID_GPIO(pin) || pin == GPIO_NUM_0 || (pin >= 26 && pin <= 37)) continue;
+    if (!GPIO_IS_VALID_GPIO(pin) || pin == DEV01_BUTTON_GPIO || (pin >= 26 && pin <= 37)) continue;
     if ((low | high) & (UINT64_C(1) << pin)) continue;
     unused |= UINT64_C(1) << pin;
   }

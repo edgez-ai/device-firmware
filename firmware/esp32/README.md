@@ -182,3 +182,27 @@ curl "$CLIENT_URL/31026/0/7"
 A successful Execute means the one-shot request was accepted. Check resource 3
 after wake/failed entry for its actual result. Do not poll during the requested
 sleep interval: the radio is deliberately unavailable.
+
+### HC33 USER button and addressable LED
+
+Heltec HT-HC33 schematic V1.0.0 connects the active-low USER button to GPIO0
+and SK6812 LED DIN to GPIO19. These are separate pins, defined in
+`main/include/dev01_board.h`. The LED requires an SK6812 data frame; GPIO
+high/low alone cannot turn it on/off. The firmware uses RMT and starts it off.
+
+| LwM2M resource | Access | Function |
+| --- | --- | --- |
+| 3347/0/5500 | Read | USER pressed state (true while held) |
+| 3347/0/5501 | Read | Volatile USER press count |
+| 3311/0/5850 | Read/write | LED on/off (dim white when true) |
+
+A short USER click toggles the LED once on release. The LED stays in that
+state until the next click or remote write; LwM2M reads report the resulting
+state. A click toggles the current state, including changes made remotely.
+Physical button edges, press counts, LED toggles and remote LED changes
+notify LwM2M observers. A shared eventfd wakes the socket select loop; only
+the LwM2M task accesses Wakaama observation state. No polling timer is added.
+The existing five-second USER hold still clears saved Wi-Fi after release.
+Before WNM or unprovisioned standby, an off frame clears the LED's latched
+color. WNM deep sleep also holds GPIO19 low; wake releases the hold before
+reinitializing the LED. LED state is volatile and resets to off on reboot.
