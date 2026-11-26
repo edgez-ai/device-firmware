@@ -3,7 +3,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-#define DEV01_DIAG_TEXT_SIZE 220
+#define DEV01_DIAG_TEXT_SIZE 320
 struct dev01_idle_samples {
   uint32_t count, wake, busy, irq, quiet;
 };

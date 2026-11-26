@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #include "dev01_diag.h"
+#include "dev01_power.h"
 #include "dev01.h"
 #include "dev01_diag_format.h"
 #include "driver/gpio.h"
@@ -59,6 +60,8 @@ static void report(char text[DEV01_DIAG_TEXT_SIZE]) {
                         valid ? stats.hw_restart_counter : 0,
                         valid ? stats.datapath_rxq_frames_dropped : 0) < 0)
     snprintf(text, DEV01_DIAG_TEXT_SIZE, "v1 error=diagnostic_overflow");
+  size_t used = strlen(text);
+  dev01_power_report(text + used, DEV01_DIAG_TEXT_SIZE - used);
 }
 static uint8_t discover(lwm2m_context_t *ctx, uint16_t id, int *count,
                         lwm2m_data_t **data, lwm2m_object_t *object) {

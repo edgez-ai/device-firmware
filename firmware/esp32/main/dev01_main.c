@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #include "dev01.h"
+#include "dev01_power.h"
 #include "driver/gpio.h"
 #include "esp_event.h"
 #include "esp_log.h"
@@ -280,6 +281,7 @@ void app_main(void) {
   events = xEventGroupCreate();
   if (!lock || !radio_lock || !requests || !events)
     abort();
+  dev01_power_init();
   nvs_handle_t nvs;
   size_t size = sizeof(active);
   if (nvs_open("ez_dev01", NVS_READONLY, &nvs) == ESP_OK) {
@@ -355,4 +357,5 @@ void app_main(void) {
   }
   ESP_LOGI(TAG, "HaLow connected; starting local gateway LwM2M client");
   dev01_lwm2m_start();
+  dev01_power_start();
 }

@@ -95,3 +95,25 @@ Each read resets the sampling window; allow 20–30 seconds between reads.
 The read itself generates radio traffic. AP DTIM must be verified on the AP;
 `li=10` reports the station configuration, not a measured AP DTIM.
 Object 3347 also exposes USER button state (5500) and volatile press count (5501).
+
+### MCU automatic light sleep
+
+The `ez-dev01` image enables ESP-IDF tickless idle and automatic light sleep
+only after BLE provisioning has finished and the HaLow station has an address.
+The external radio keeps its association. Its command vetoes and WAKE output
+hold an MCU no-light-sleep lock during radio work. BUSY-high wakes the MCU via
+EXT1, independently of the driver's normal BUSY edge interrupt. USER-low wakes
+via EXT0; RTC pin routing is restored after each attempt. IRQ is not used as a
+wake source because it can remain low while the transceiver sleeps.
+
+Radio RESET, CS, WAKE, SCK and MOSI retain their active output levels. MISO and
+IRQ inputs have sleep-time input buffers and pulls disabled, then restore on
+wake. The BUSY internal pull-down is removed because the radio drives the pin.
+Flash/PSRAM and unknown board pins are not isolated. Whole-board GPIO isolation
+and flash power-down are not enabled.
+
+The same `/3347/0/5750` report adds `mcu_ls`, `ls_try`, `ls_ok`, `ls_pm_ms`,
+`ls_win_ms`, and `ls_wake`. Counters reset per read. `ls_ok` requires a real
+ESP-IDF wake cause; rejected attempts are excluded. `ls_pm_ms` includes sleep
+entry/exit overhead, so it is not exact hardware residency or measured current.
+`ls_wake` uses ESP-IDF wake-cause values (2=EXT0, 3=EXT1, 4=timer).
