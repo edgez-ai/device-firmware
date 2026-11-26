@@ -45,6 +45,8 @@ the new onboarding behavior.
 ## Local LwM2M
 
 After DHCP, the client uses the current HaLow gateway at UDP port 5683.
+If a local-only AP omits a router, it uses the DHCP server identifier when
+that server is on the same subnet. No address is compiled into the image.
 The endpoint and `/3/0/2` are the factory serial; `/3/0/1` is the factory model
 extension (or `EZ-DEV01` for older factory records). `/31029/0/7` returns the
 saved device name, falling back to serial. Device Execute `/3/0/4` reboots;

@@ -315,9 +315,14 @@ void app_main(void) {
     ESP_ERROR_CHECK(dev01_request_wifi(&active));
   }
   while (!(xEventGroupGetBits(events) & GOT_IP)) {
-    vTaskDelay(pdMS_TO_TICKS(5000));
+    /* DHCP can finish during the retry interval. Wake immediately and never
+     * queue a reconnect over the successful association we just acquired. */
+    if (xEventGroupWaitBits(events, GOT_IP, pdFALSE, pdTRUE,
+                            pdMS_TO_TICKS(5000)) &
+        GOT_IP)
+      break;
     xSemaphoreTake(lock, portMAX_DELAY);
-    bool retry = !attempting;
+    bool retry = !attempting && !(xEventGroupGetBits(events) & GOT_IP);
     xSemaphoreGive(lock);
     if (retry)
       (void)dev01_request_wifi(&active);

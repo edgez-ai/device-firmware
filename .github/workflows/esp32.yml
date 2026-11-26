@@ -29,6 +29,8 @@ jobs:
           python3 tests/test_factory_data.py
           python3 tests/test_esp_prov.py
           python3 tests/test_companion.py
+          cc -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined -Ifirmware/esp32/main/include tests/native/dev01_network.c -o /tmp/dev01-network
+          /tmp/dev01-network
           python3 .github/scripts/check-firmware-compliance.py
       - name: Package test firmware and notices
         shell: bash

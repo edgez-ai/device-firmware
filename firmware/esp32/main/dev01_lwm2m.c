@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #include "dev01.h"
+#include "dev01_network.h"
 #include "esp_app_desc.h"
 #include "esp_log.h"
 #include "esp_netif.h"
@@ -8,6 +9,8 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "liblwm2m.h"
+#include "lwip/dhcp.h"
+#include "lwip/netif.h"
 #include "lwm2mclient.h"
 #include <arpa/inet.h>
 #include <errno.h>
@@ -128,12 +131,40 @@ static uint8_t execute_device(lwm2m_context_t *ctx, uint16_t instance,
   dev01_reboot(resource == 5);
   return COAP_204_CHANGED;
 }
+struct dhcp_lookup {
+  uint8_t index;
+  uint32_t server;
+};
+static esp_err_t read_dhcp_server(void *arg) {
+  struct dhcp_lookup *lookup = arg;
+  struct netif *netif = netif_get_by_index(lookup->index);
+  struct dhcp *dhcp = netif ? netif_dhcp_data(netif) : NULL;
+  if (dhcp && IP_IS_V4(&dhcp->server_ip_addr))
+    lookup->server = ip4_addr_get_u32(ip_2_ip4(&dhcp->server_ip_addr));
+  return ESP_OK;
+}
+static uint32_t current_server(esp_netif_t *netif) {
+  esp_netif_ip_info_t ip;
+  if (!netif || esp_netif_get_ip_info(netif, &ip) != ESP_OK || !ip.ip.addr)
+    return 0;
+  struct dhcp_lookup lookup = {0};
+  if (!ip.gw.addr) {
+    int index = esp_netif_get_netif_impl_index(netif);
+    if (index > 0 && index <= UINT8_MAX) {
+      lookup.index = index;
+      if (esp_netif_tcpip_exec(read_dhcp_server, &lookup) != ESP_OK)
+        return 0;
+    }
+  }
+  return dev01_lwm2m_server(ip.ip.addr, ip.netmask.addr, ip.gw.addr,
+                            lookup.server);
+}
 static void client_task(void *arg) {
   (void)arg;
   for (;;) {
     esp_netif_t *netif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
-    esp_netif_ip_info_t ip;
-    if (!netif || esp_netif_get_ip_info(netif, &ip) != ESP_OK || !ip.gw.addr) {
+    esp_ip4_addr_t server = {.addr = current_server(netif)};
+    if (!server.addr) {
       vTaskDelay(pdMS_TO_TICKS(1000));
       continue;
     }
@@ -141,13 +172,13 @@ static void client_task(void *arg) {
                                   socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP),
                               .server = {.sin_family = AF_INET,
                                          .sin_port = htons(5683),
-                                         .sin_addr.s_addr = ip.gw.addr}};
+                                         .sin_addr.s_addr = server.addr}};
     if (session.socket < 0) {
       vTaskDelay(pdMS_TO_TICKS(1000));
       continue;
     }
     char uri[64];
-    snprintf(uri, sizeof(uri), "coap://" IPSTR ":5683", IP2STR(&ip.gw));
+    snprintf(uri, sizeof(uri), "coap://" IPSTR ":5683", IP2STR(&server));
     ESP_LOGI("ez_dev01_lwm2m", "Registering endpoint %s at %s",
              dev01_identity.serial, uri);
     lwm2m_list_t device_instance = {.id = 0}, hardware_instance = {.id = 0};
@@ -166,9 +197,7 @@ static void client_task(void *arg) {
                  lwm2m_configure(context, dev01_identity.serial, NULL, NULL, 4,
                                  objects) == 0;
     while (ready) {
-      esp_netif_ip_info_t current;
-      if (esp_netif_get_ip_info(netif, &current) != ESP_OK ||
-          current.gw.addr != session.server.sin_addr.s_addr)
+      if (current_server(netif) != session.server.sin_addr.s_addr)
         break;
       time_t timeout = 1;
       if (lwm2m_step(context, &timeout))

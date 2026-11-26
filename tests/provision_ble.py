@@ -69,9 +69,9 @@ async def main(args):
                 for descriptor in characteristic.descriptors:
                     if descriptor.uuid.lower() == "00002901-0000-1000-8000-00805f9b34fb":
                         name = bytes(await client.read_gatt_descriptor(descriptor.handle)).decode().rstrip("\0")
-                        if name in ["prov-session", "prov-config", "prov-scan", "proto-ver"]:
+                        if name in ["prov-session", "prov-config", "prov-scan", "proto-ver", "mqtt-config"]:
                             endpoints[name] = characteristic
-        if len(endpoints) != 4:
+        if not {"prov-session", "prov-config", "prov-scan", "proto-ver"}.issubset(endpoints):
             raise RuntimeError("Expected all four standard endpoint descriptors")
         version = json.loads(bytes(await client.read_gatt_char(endpoints["proto-ver"])))
         if version["prov"]["sec_ver"] != 1:
