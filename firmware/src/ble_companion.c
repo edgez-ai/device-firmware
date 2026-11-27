@@ -1,10 +1,11 @@
 /* SPDX-License-Identifier: Apache-2.0
  * EdgeZ's existing FFF0 / FFF1 RX / FFF2 TX, EZ + uint16-LE framed protobuf.
- * The unprovisioned camera/station reports local status/settings; it does not
- * claim to forward mesh packets or apply the phone's mesh profile as Wi-Fi. */
+ * Unprovisioned devices can forward opaque chat packets over HaLow mesh.
+ * The companion mesh profile remains separate from station credentials. */
 #include "ble_companion.h"
 #include "ble_prov.h"
 #include "companion_protocol.h"
+#include "companion_mesh_platform.h"
 #include "factory_data.h"
 #include "hardware_config.h"
 #include <errno.h>
@@ -15,6 +16,8 @@
 #include <zephyr/bluetooth/gatt.h>
 #include <zephyr/kernel.h>
 #include <zephyr/sys/byteorder.h>
+#include <zephyr/logging/log.h>
+LOG_MODULE_REGISTER(ble_companion, LOG_LEVEL_INF);
 
 struct tx_item { uint16_t length; uint8_t frame[COMPANION_PACKET_MAX + 4]; };
 /* Do not permanently take camera/newlib heap space for a service that is
@@ -45,6 +48,7 @@ static ssize_t receive(struct bt_conn *conn, const struct bt_gatt_attr *attr,
 	if (offset || flags & BT_GATT_WRITE_FLAG_PREPARE) return BT_GATT_ERR(BT_ATT_ERR_INVALID_OFFSET);
 	k_mutex_lock(&io_lock, K_FOREVER);
 	if (!buffers || conn != peer || !notify_enabled || !ez_prov_companion_active(conn)) {
+		LOG_WRN("RX rejected: buffers=%u peer=%u subscribed=%u", buffers != NULL, conn == peer, notify_enabled);
 		k_mutex_unlock(&io_lock); return BT_GATT_ERR(BT_ATT_ERR_AUTHORIZATION);
 	}
 	const uint8_t *data = buffer;
@@ -65,18 +69,20 @@ static ssize_t receive(struct bt_conn *conn, const struct bt_gatt_attr *attr,
 			.node = strtoull(ez_factory_device_serial(), NULL, 16),
 			.name = ez_prov_device_name(), .version = version,
 			.icon = hardware_mode_get() == HARDWARE_CAMERA ? "camera" : "sensor",
+			.country = ez_factory_get()->country,
 			.gps = hardware_mode_get() == HARDWARE_GPS,
 		};
 		rc = companion_protocol_exchange(&id, buffers->rx + 4, size, item.frame + 4, COMPANION_PACKET_MAX);
 		received = 0; memset(buffers->rx, 0, sizeof(buffers->rx));
 		if (rc < 0) break;
+		if (rc == 0) continue;
 		item.frame[0] = 'E'; item.frame[1] = 'Z'; sys_put_le16(rc, item.frame + 2);
 		item.length = rc + 4;
 		rc = k_msgq_put(&companion_tx, &item, K_NO_WAIT);
 		if (rc) break;
 		(void)k_work_reschedule(&tx_work, K_MSEC(1));
 	}
-	if (rc < 0) { received = 0; memset(buffers->rx, 0, sizeof(buffers->rx)); }
+	if (rc < 0) { LOG_WRN("Control exchange failed: %d", rc); received = 0; memset(buffers->rx, 0, sizeof(buffers->rx)); }
 	k_mutex_unlock(&io_lock);
 	return rc < 0 ? BT_GATT_ERR(rc == -EACCES ? BT_ATT_ERR_AUTHORIZATION : BT_ATT_ERR_VALUE_NOT_ALLOWED) : length;
 }
@@ -84,7 +90,10 @@ static ssize_t subscribe(struct bt_conn *conn, const struct bt_gatt_attr *attr, 
 {
 	ARG_UNUSED(attr);
 	if (value != 0 && value != BT_GATT_CCC_NOTIFY) return BT_GATT_ERR(BT_ATT_ERR_VALUE_NOT_ALLOWED);
-	if (value && !ez_prov_companion_acquire(conn)) return BT_GATT_ERR(BT_ATT_ERR_AUTHORIZATION);
+	if (value && !ez_prov_companion_acquire(conn)) {
+		LOG_WRN("Companion claim rejected"); return BT_GATT_ERR(BT_ATT_ERR_AUTHORIZATION);
+	}
+	LOG_INF("CCC request: %u", value);
 	return sizeof(value);
 }
 static void subscription_changed(const struct bt_gatt_attr *attr, uint16_t value)
@@ -92,7 +101,9 @@ static void subscription_changed(const struct bt_gatt_attr *attr, uint16_t value
 	ARG_UNUSED(attr);
 	k_mutex_lock(&io_lock, K_FOREVER);
 	notify_enabled = value == BT_GATT_CCC_NOTIFY;
+	LOG_INF("Companion notifications: %s", notify_enabled ? "enabled" : "disabled");
 	k_mutex_unlock(&io_lock);
+	companion_mesh_session(value == BT_GATT_CCC_NOTIFY);
 }
 static struct bt_gatt_attr attributes[] = {
 	BT_GATT_PRIMARY_SERVICE(&service_uuid),
@@ -116,13 +127,33 @@ static void notify_work(struct k_work *work)
 		if (++retries < 100) { (void)k_work_reschedule(&tx_work, K_MSEC(10)); goto done; }
 	}
 	if (!rc) { sent += size; retries = 0; }
+	else LOG_WRN("Notify failed: %d retries=%u", rc, retries);
 	if (rc || sent == buffers->output.length) { pending = false; memset(&buffers->output, 0, sizeof(buffers->output)); }
 	if (pending || k_msgq_num_used_get(&companion_tx)) (void)k_work_reschedule(&tx_work, K_MSEC(1));
  done:
 	k_mutex_unlock(&io_lock);
 }
+void ez_companion_deliver(const uint8_t *packet, size_t size)
+{
+ if (!packet || !size || size > COMPANION_PACKET_MAX) return;
+ k_mutex_lock(&io_lock, K_FOREVER);
+ if (buffers && peer && notify_enabled && ez_prov_companion_active(peer)) {
+  struct tx_item item = {.length = size + 4};
+  item.frame[0]='E'; item.frame[1]='Z'; sys_put_le16(size,item.frame+2);
+  memcpy(item.frame+4,packet,size);
+  if (!k_msgq_put(&companion_tx,&item,K_NO_WAIT)) k_work_reschedule(&tx_work,K_NO_WAIT);
+ }
+ k_mutex_unlock(&io_lock);
+}
 void ez_companion_reset(struct bt_conn *conn)
 {
+	LOG_INF("BLE companion %s", conn ? "connected" : "disconnected");
+	/* Finish any in-flight exchange and deny new input before resetting its
+	 * mesh profile. Stop outside io_lock so pending RF delivery can finish. */
+	k_mutex_lock(&io_lock, K_FOREVER);
+	notify_enabled = false;
+	k_mutex_unlock(&io_lock);
+	companion_mesh_session(false);
 	(void)k_work_cancel_delayable(&tx_work);
 	k_mutex_lock(&io_lock, K_FOREVER);
 	if (peer) bt_conn_unref(peer);
@@ -155,6 +186,7 @@ int ez_companion_register(void)
 	}
 	if (registered) return 0;
 	int rc = bt_gatt_service_register(&service);
+	LOG_INF("GATT register: %d RX=%u TX=%u CCC=%u", rc, attributes[2].handle, attributes[4].handle, attributes[5].handle);
 	if (!rc) registered = true;
 	else ez_companion_release_buffers();
 	return rc;

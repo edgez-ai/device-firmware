@@ -53,3 +53,5 @@ string(REPLACE "    gpio_set_level(CONFIG_MM_WAKE, 1);" "    dev01_power_radio_a
 string(REPLACE "    gpio_set_level(CONFIG_MM_WAKE, 0);" "    gpio_set_level(CONFIG_MM_WAKE, 0);\n    dev01_power_radio_awake(false);" power_wlan "${power_wlan}")
 file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/dev01_mmhal_wlan.c" "#include <stdbool.h>\nextern void dev01_power_radio_awake(bool);\n${power_wlan}")
 target_sources(shims PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/dev01_mmhal_core.c" "${CMAKE_CURRENT_BINARY_DIR}/dev01_mmhal_wlan.c")
+
+include("${CMAKE_CURRENT_LIST_DIR}/companion_mesh.cmake")

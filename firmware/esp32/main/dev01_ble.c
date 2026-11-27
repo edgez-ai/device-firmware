@@ -1,12 +1,14 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #include "cJSON.h"
 #include "companion_protocol.h"
+#include "companion_mesh_platform.h"
 #include "dev01.h"
 #include "esp_app_desc.h"
 #include "esp_log.h"
 #include "esp_mac.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "host/ble_hs.h"
@@ -19,6 +21,7 @@
 #include "services/gap/ble_svc_gap.h"
 #include "services/gatt/ble_svc_gatt.h"
 #include <errno.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -36,6 +39,34 @@ static struct {
   int size;
   enum prov_endpoint endpoint;
 } *io;
+static atomic_uint notification_epoch;
+struct mesh_notification {unsigned epoch;size_t size;uint8_t packet[COMPANION_PACKET_MAX];};
+static QueueHandle_t mesh_notifications;
+static TaskHandle_t mesh_notify_task;
+void dev01_companion_deliver(const uint8_t *packet,size_t size) {
+ if(!packet || !size || size>COMPANION_PACKET_MAX || !mesh_notifications) return;
+ struct mesh_notification item={.epoch=atomic_load(&notification_epoch),.size=size};memcpy(item.packet,packet,size);
+ (void)xQueueSend(mesh_notifications,&item,0);
+}
+static void mesh_notify(void *arg) {
+ (void)arg;struct mesh_notification item;
+ for(;;) {
+  xQueueReceive(mesh_notifications,&item,portMAX_DELAY);
+  uint8_t frame[COMPANION_PACKET_MAX+4]={'E','Z',item.size,item.size>>8};
+  memcpy(frame+4,item.packet,item.size);
+  unsigned retries=0;
+  for(size_t offset=0;offset<item.size+4;) {
+   xSemaphoreTake(guard,portMAX_DELAY);
+   if(item.epoch!=atomic_load(&notification_epoch) || !io || !companion || !subscribed || peer==BLE_HS_CONN_HANDLE_NONE || closing) {xSemaphoreGive(guard);break;}
+   size_t take=MIN((size_t)ble_att_mtu(peer)-3,item.size+4-offset);
+   struct os_mbuf *buffer=ble_hs_mbuf_from_flat(frame+offset,take);
+   int rc=buffer?ble_gatts_notify_custom(peer,tx_handle,buffer):BLE_HS_ENOMEM;
+   xSemaphoreGive(guard);
+   if(rc) {if(++retries>=100) break;vTaskDelay(pdMS_TO_TICKS(10));continue;}
+   retries=0;offset+=take;vTaskDelay(pdMS_TO_TICKS(5));
+  }
+ }
+}
 static void wipe(void *data, size_t n) {
   volatile uint8_t *p = data;
   while (n--)
@@ -278,6 +309,7 @@ static int control(uint16_t conn, uint16_t handle,
         .name = dev01_name(),
         .version = esp_app_get_description()->version,
         .icon = "sensor",
+        .country = dev01_factory_country(),
         .gps = 0};
     int n = companion_protocol_exchange(&identity, io->frame + 4, payload,
                                         response + 4, 512);
@@ -287,18 +319,12 @@ static int control(uint16_t conn, uint16_t handle,
       error = BLE_ATT_ERR_INSUFFICIENT_AUTHOR;
       break;
     }
-    response[0] = 'E';
-    response[1] = 'Z';
-    response[2] = n;
-    response[3] = n >> 8;
-    for (size_t offset = 0; offset < (size_t)n + 4;) {
-      size_t take = MIN((size_t)ble_att_mtu(conn) - 3, (size_t)n + 4 - offset);
-      struct os_mbuf *buffer = ble_hs_mbuf_from_flat(response + offset, take);
-      if (!buffer || ble_gatts_notify_custom(conn, tx_handle, buffer)) {
-        error = BLE_ATT_ERR_INSUFFICIENT_RES;
-        break;
-      }
-      offset += take;
+    if (n == 0) continue;
+    struct mesh_notification item={.epoch=atomic_load(&notification_epoch),.size=(size_t)n};
+    memcpy(item.packet,response+4,n);
+    if (!xQueueSend(mesh_notifications,&item,0)) {
+      error=BLE_ATT_ERR_INSUFFICIENT_RES;
+      break;
     }
   }
   if (error) {
@@ -376,12 +402,14 @@ static int gap(struct ble_gap_event *event, void *arg) {
   case BLE_GAP_EVENT_SUBSCRIBE:
     if (event->subscribe.attr_handle == tx_handle) {
       subscribed = event->subscribe.cur_notify;
+      if (!subscribed) companion_mesh_session(false);
       if (subscribed &&
           prov_session_can_claim(true, !dev01_companion_available(),
                                  event->subscribe.conn_handle == peer, true,
                                  closing)) {
         ESP_LOGI("ez_dev01_ble", "Companion claimed; provisioning closed");
         companion = true;
+        companion_mesh_session(true);
         staged_valid = false;
         wipe(&staged, sizeof(staged));
         prov_protocol_reset(&protocol);
@@ -393,6 +421,9 @@ static int gap(struct ble_gap_event *event, void *arg) {
     ESP_LOGI("ez_dev01_ble",
              "BLE disconnected; restoring provisioning for 180 seconds");
     peer = BLE_HS_CONN_HANDLE_NONE;
+    companion_mesh_session(false);
+    atomic_fetch_add(&notification_epoch,1);
+    xQueueReset(mesh_notifications);
     companion = subscribed = staged_valid = false;
     wipe(&staged, sizeof(staged));
     deadline = esp_timer_get_time() + GRACE_US;
@@ -452,6 +483,8 @@ esp_err_t dev01_onboarding(void) {
   guard = xSemaphoreCreateMutex();
   if (!io || !guard)
     return ESP_ERR_NO_MEM;
+  mesh_notifications = xQueueCreate(3, sizeof(struct mesh_notification));
+  if (!mesh_notifications || xTaskCreate(mesh_notify, "mesh_ble_tx", 4096, NULL, 4, &mesh_notify_task) != pdPASS) return ESP_ERR_NO_MEM;
   if (nimble_port_init() != ESP_OK)
     return ESP_FAIL;
   ble_svc_gap_init();
@@ -493,6 +526,9 @@ esp_err_t dev01_onboarding(void) {
   }
   for (unsigned i = 0; i < 100 && peer != BLE_HS_CONN_HANDLE_NONE; i++)
     vTaskDelay(pdMS_TO_TICKS(50));
+  companion_mesh_session(false);
+  vTaskDelete(mesh_notify_task);
+  vQueueDelete(mesh_notifications); mesh_notifications = NULL;
   nimble_port_stop();
   nimble_port_deinit();
   prov_protocol_reset(&protocol);

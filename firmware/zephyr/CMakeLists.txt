@@ -67,7 +67,8 @@ if(RADAR_HALOW_SLEEP_DIAG)
 endif()
 
 if(EZ_DEV54_BLE_PROV)
-  list(APPEND EXTRA_CONF_FILE "${CMAKE_CURRENT_LIST_DIR}/ble_prov.conf")
+  list(APPEND EXTRA_CONF_FILE "${CMAKE_CURRENT_LIST_DIR}/ble_prov.conf"
+    "${CMAKE_CURRENT_LIST_DIR}/companion_mesh.conf")
   list(APPEND EXTRA_DTC_OVERLAY_FILE "${CMAKE_CURRENT_LIST_DIR}/factory_data.overlay")
   if(RADAR_HALOW_CAMERA)
     list(APPEND EXTRA_DTC_OVERLAY_FILE "${CMAKE_CURRENT_LIST_DIR}/camera_uart_deferred.overlay")
@@ -80,6 +81,10 @@ endif()
 
 if(EZ_DEV54_UNIFIED)
   list(APPEND EXTRA_CONF_FILE "${CMAKE_CURRENT_LIST_DIR}/unified.conf")
+endif()
+
+if(EZ_DEV54_COMPANION_DIAGNOSTICS)
+  list(APPEND EXTRA_CONF_FILE "${CMAKE_CURRENT_LIST_DIR}/companion_mesh_debug.conf")
 endif()
 
 # Pinned EdgeZ Morse Micro Zephyr module. PlatformIO does not use a west
@@ -256,4 +261,8 @@ endif()
 if(CONFIG_EZ_DEV54_BLE_COMPANION)
   target_sources(app PRIVATE "${RADAR_NRF54_DIR}/src/ble_companion.c"
     "${RADAR_NRF54_DIR}/src/companion_protocol.c")
+endif()
+
+if(CONFIG_EZ_DEV54_BLE_COMPANION)
+  include("${RADAR_NRF54_DIR}/cmake/zephyr_companion_mesh.cmake")
 endif()

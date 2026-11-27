@@ -31,8 +31,13 @@ the new onboarding behavior.
   companion mode and closes reads/writes on all provisioning endpoints.
 - Disconnect clears session/staged data, restores provisioning and starts a
   fresh three-minute window. Expiry enters deep sleep; USER/GPIO0 wakes it.
-- Companion supports status and read-only device settings. It does not forward
-  mesh chat packets. This is the same current companion scope as EZ-DEV54.
+- Companion accepts the app’s mesh profile and forwards encrypted chat in both
+  directions over a secure SAE/AMPE HaLow mesh, matching EZ-DEV54. Public
+  channels use BATMAN broadcast; direct messages follow BATMAN routes.
+  Status reports initialization, authorized peers and learned routes.
+- Mesh profiles stay in RAM. Phone private keys and upstream Wi-Fi fields are
+  ignored; factory identity and saved station credentials are preserved.
+  Disconnect stops the mesh before provisioning becomes available again.
 - HaLow network scanning is available through `prov-scan` (active scan).
 - Standard `prov-config` supplies SSID/password; the existing `mqtt-config`
   endpoint saves `deviceName`. No extra endpoint is introduced.

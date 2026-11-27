@@ -7,10 +7,11 @@
 struct companion_identity {
 	uint64_t node;
 	const char *name, *version, *icon;
+	const char *country;
 	int gps;
 };
-/* EdgeZ NetworkPacket: INIT/status and read-only DeviceSettings. This local
- * station companion does not apply mesh profiles or provision Wi-Fi. */
+/* EdgeZ NetworkPacket control codec. Optional mesh operations are bound only
+ * during an unprovisioned BLE companion session; Wi-Fi credentials are separate. */
 int companion_protocol_exchange(const struct companion_identity *, const uint8_t *, size_t,
 				uint8_t *, size_t);
 #endif

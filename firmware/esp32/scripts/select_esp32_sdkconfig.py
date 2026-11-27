@@ -30,3 +30,11 @@ if pio_env == "ez-dev01":
         subprocess.run(["git", "-C", str(platform_dir), "apply", str(patch)], check=True)
     else:
         subprocess.run(["git", "-C", str(platform_dir), "apply", "--reverse", "--check", str(patch)], check=True)
+
+# PlatformIO checks only top-level CMakeLists files. Refresh its code model
+# before compiling when the consumer's included target configuration changes.
+if pio_env == "ez-dev01":
+    cmake_cache = Path(env.subst("$BUILD_DIR")) / "CMakeCache.txt"
+    consumer_inputs = [project_dir / "main/dev01.cmake", project_dir / "main/companion_mesh.cmake"]
+    if cmake_cache.is_file() and any(path.stat().st_mtime > cmake_cache.stat().st_mtime for path in consumer_inputs):
+        cmake_cache.unlink()

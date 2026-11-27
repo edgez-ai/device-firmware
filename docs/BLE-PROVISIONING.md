@@ -64,13 +64,18 @@ disconnect**. Reconnecting holds the device awake again. Provisioning success
 retains the existing five-second status grace and normal provisioned operation.
 
 Frames use the shared `EZ` + little-endian uint16 length + NetworkPacket protobuf
-wire format, with ATT fragmentation/reassembly in both directions. The current
-station/LwM2M firmware supports SDK INIT/status and DeviceSettings GET. INIT is a
-local session/status probe; it does not apply the phone's mesh profile as Wi-Fi.
-Companion buffers are allocated only while onboarding and released before
-applying Wi-Fi, so provisioned camera operation retains its RAM.
-Settings SET, mesh forwarding, scripts and other unsupported operations are
-rejected rather than reporting success. Status does not claim a live mesh link.
+wire format, with ATT fragmentation/reassembly in both directions. The normal
+firmware accepts SDK INIT and DeviceSettings GET/SET for an in-memory mesh
+profile. Secure SAE/AMPE peering and BATMAN routing forward opaque encrypted
+chat packets in both directions. Public chat destinations use mesh broadcast;
+direct messages use learned routes. Status distinguishes radio initialization,
+authorized peers and route availability.
+
+Mesh settings never become station Wi-Fi credentials. The phone's private key
+and upstream Wi-Fi fields are ignored, and disconnect stops the mesh before
+reopening provisioning. Unsupported scripts remain rejected. A zero radio
+channel selects the first permitted 1 MHz channel in the requested country;
+an explicit channel must be valid in that country's regulatory database.
 
 Hardware verification (does not write credentials or factory data):
 
@@ -78,6 +83,29 @@ Hardware verification (does not write credentials or factory data):
 python3 tests/companion_ble.py --name EZ_5037CDF35BB6 \
   --hold-seconds 185 --check-timeout
 ```
+
+### Two-board mesh verification
+
+The normal `ez-dev54` and `ez-dev01` builds include mesh support. Both boards
+must be unprovisioned and attached to BLE hosts while chatting. These test tools
+use the app SDK to generate synthetic identities and encrypted messages, then
+check discovery beacons, live metadata updates, direct messages, acknowledgments
+and public-channel forwarding. They do not change factory data or Wi-Fi settings.
+
+The fixture generator uses US 915 MHz / 2 MHz and mesh ID
+`edgez-companion-test` with test passphrase `mesh-test-2026`. Supply the two
+node IDs reported by HaLow status; a legacy HC33's node ID is its host MAC,
+which may differ from its factory serial/BLE name.
+
+```sh
+node tests/make_mesh_sdk_fixtures.cjs /path/to/@edgez/react-native-sdk \
+  001122334455 AABBCCDDEEFF > /tmp/mesh-fixtures.json
+python3 tests/companion_mesh_ble.py --fixtures /tmp/mesh-fixtures.json \
+  --name EZ_FIRST_SERIAL --name EZ_SECOND_SERIAL
+```
+
+Names are matched against current advertisements so a cached older provisioning
+name on macOS does not prevent discovery. Close other BLE clients during this test.
 
 ## Transport standby and two-stage provisioning wake
 
@@ -205,6 +233,26 @@ LwM2M Device resources `/3/0/1` and `/3/0/2` report factory model and serial.
 
 
 ## Verification
+
+For nRF companion mesh diagnostics, build `pio run -d firmware -e
+ez-dev54-mesh-debug` and flash that environment's `firmware.hex`. This enables
+deferred, nonblocking SEGGER RTT logs over SWD, including BLE connection and
+CCC errors, radio startup stages, and a mesh summary every ten seconds with
+discovery, authentication, rejection, peer, and route counters. Fatal errors
+include register/exception details. Passwords, keys, and message contents are
+never logged. Read channel 0 with `JLinkRTTLogger -Device NRF54L15_M33 -If SWD
+-Speed 4000 -USB PROBE_SERIAL -RTTChannel 0 mesh.log`; leave the MCU running
+while reproducing a problem, since debugger halts can cause BLE timing faults.
+The normal `ez-dev54` environment retains its low-power logging settings.
+The shared BLE profile disables only `BT_CTLR_ASSERT_OVERHEAD_START`: a late
+prepare callback during RF/SAE startup skips that BLE event instead of halting
+the MCU. Connection supervision and other controller assertions still apply.
+Companion firmware notifies the existing status packet after radio startup,
+when link/routing state changes, and every ten seconds while active. This
+refreshes clients that only received the initial pre-start status response.
+After changing Kconfig values, clean the PlatformIO environment before building
+to avoid stale controller objects (`pio run -d firmware -e ez-dev54 -t clean`,
+or substitute the diagnostic environment).
 
 Host interoperability tests use Espressif's unmodified Python Security 1
 client from ESP-IDF and the real C protocol codec. Factory tests compile the

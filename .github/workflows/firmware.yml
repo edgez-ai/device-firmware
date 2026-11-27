@@ -18,7 +18,9 @@ jobs:
       - name: Test factory compatibility, CRC and threshold overrides
         run: python3 tests/test_factory_data.py
       - name: Test companion session gates and protobuf bounds with sanitizers
-        run: python3 tests/test_companion.py
+        run: |
+          python3 tests/test_companion.py
+          python3 tests/test_companion_mesh.py
       - name: Test the three-second two-axis gyro gate with sanitizers
         run: |
           cc -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined \

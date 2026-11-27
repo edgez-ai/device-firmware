@@ -28,6 +28,8 @@
 #include <zephyr/sys/atomic.h>
 #include <zephyr/sys/reboot.h>
 #include <zephyr/sys/util.h>
+#include <zephyr/logging/log.h>
+LOG_MODULE_REGISTER(ble_prov, LOG_LEVEL_INF);
 
 struct credentials {
 	uint32_t magic;
@@ -509,6 +511,7 @@ BT_GATT_SERVICE_DEFINE(provisioning_service,
 
 static void connected(struct bt_conn *conn, uint8_t err)
 {
+	LOG_INF("BLE connected: status=0x%02x", err);
 	if (err) { (void)k_work_reschedule(&advertise_work, K_MSEC(200)); return; }
 	k_spinlock_key_t key = k_spin_lock(&connection_lock);
 	connection = bt_conn_ref(conn);
@@ -529,6 +532,7 @@ static void connected(struct bt_conn *conn, uint8_t err)
 }
 static void disconnected(struct bt_conn *conn, uint8_t reason)
 {
+	LOG_INF("BLE disconnected: reason=0x%02x", reason);
 	ARG_UNUSED(conn); ARG_UNUSED(reason);
 	k_spinlock_key_t key = k_spin_lock(&connection_lock);
 	struct bt_conn *old = connection; connection = NULL;

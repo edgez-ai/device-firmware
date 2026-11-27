@@ -6,7 +6,7 @@
 #include <stdio.h>
 #include <string.h>
 
-static const struct companion_identity identity = {0x5037cdf35bb6ULL, "Test", "EZ-DEV54-CAM/test", "camera", 0};
+static const struct companion_identity identity = {.node=0x5037cdf35bb6ULL, .name="Test", .version="EZ-DEV54-CAM/test", .icon="camera", .country="US", .gps=0};
 int main(void)
 {
 	/* The timeout that races connection establishment must leave the live

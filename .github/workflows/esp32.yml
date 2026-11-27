@@ -29,6 +29,7 @@ jobs:
           python3 tests/test_factory_data.py
           python3 tests/test_esp_prov.py
           python3 tests/test_companion.py
+          python3 tests/test_companion_mesh.py
           cc -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined -Ifirmware/esp32/main/include tests/native/dev01_network.c -o /tmp/dev01-network
           /tmp/dev01-network
           cc -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined -Ifirmware/esp32/main/include tests/native/dev01_diag.c firmware/esp32/main/dev01_diag_format.c -o /tmp/dev01-diag
