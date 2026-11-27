@@ -6,6 +6,23 @@ cmake_minimum_required(VERSION 3.20.0)
 set(RADAR_NRF54_DIR "${CMAKE_CURRENT_LIST_DIR}/..")
 set(RADAR_REPO_DIR "${RADAR_NRF54_DIR}/..")
 
+# An independent measurement image: do not initialize the station/mesh driver
+# or load normal credentials and application Kconfig defaults.
+if(EZ_DEV54_WNM_BASELINE)
+  include("${CMAKE_CURRENT_LIST_DIR}/wnm_baseline/build.cmake")
+  return()
+endif()
+
+if(EZ_DEV54_ALL_OFF)
+  set(CONF_FILE "${CMAKE_CURRENT_LIST_DIR}/all_off/prj.conf")
+  set(KCONFIG_ROOT "${CMAKE_CURRENT_LIST_DIR}/all_off/Kconfig")
+  set(DTC_OVERLAY_FILE "${CMAKE_CURRENT_LIST_DIR}/all_off/board.overlay")
+  find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
+  project(ez_dev54_all_off)
+  target_sources(app PRIVATE "${CMAKE_CURRENT_LIST_DIR}/all_off/main.c")
+  return()
+endif()
+
 if(EZ_DEV54_UNIFIED)
   set(DTC_OVERLAY_FILE "${CMAKE_CURRENT_LIST_DIR}/boards/edgez_nrf54l15_unified.overlay")
 endif()
