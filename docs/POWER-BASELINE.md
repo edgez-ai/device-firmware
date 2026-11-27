@@ -1,4 +1,13 @@
-# nRF54L15 all-off power baseline
+# Archived nRF54L15 power measurements
+
+The temporary all-off, WNM, DTIM radio-only and System ON idle environments
+were removed from the active firmware at the user's request after testing.
+The sections below preserve historical setup and results; their build
+commands no longer apply to the current tree. The initial baselines are
+recorded in commit `d6297e0`. Final measurement source snapshots, verified
+HEX files and diagnostics are retained in local ignored artifacts.
+Use the normal `ez-dev54` environment for application firmware.
+
 
 `ez-dev54-all-off` is an independent image for the EdgeZ E73 carrier. It does
 not initialize the normal application, HaLow driver, BLE, networking, logging,
@@ -107,3 +116,44 @@ interaction mean the current difference cannot be attributed entirely to MCU
 consumption. Sustained association and recoverable operation were not verified
 in the MCU-off experiment. Local artifacts retain the earlier host-idle image;
 it is not a separate current PlatformIO environment.
+
+## System ON idle comparison with identical radio pins
+
+Build `pio run -d firmware -e ez-dev54-dtim-idle-baseline`. It inherits the
+radio-only DTIM setup unchanged, including RESETn HIGH, WAKE LOW, CS HIGH,
+radio power HIGH and disconnected SPI data/IRQ/BUSY. After the exact same
+quiesce sequence, it replaces System OFF with shallow CPU WFI, retaining
+MCU/RAM. The scheduler, system clock and host interrupts remain stopped to
+avoid background tasks using the isolated bus. No periodic wake is enabled.
+Reset or power-cycle to restart. This remains an isolated measurement image,
+not a recoverable online application; BUSY/IRQ wake has not been restored.
+
+Verify `baseline_stage=6`, `dtim_radio_spi_enabled=0`, and
+`dtim_radio_pin_levels=13`, with all association/PS/quiesce results zero.
+Expected stack is the shallow WFI loop in main, not `sys_poweroff`. Compare
+against the radio-only System OFF measurement using equal windows and the
+same supply voltage.
+
+The rightmost stable 10-second recorded window showed 528.80 uA average,
+63.19 mA maximum, or 1.957 mW at 3.7 V, with approximately one large pulse per
+second. The prior System OFF 10-second window was about 511 uA. The observed
+difference of about 18 uA is small, but separate-run radio pulse energy and
+measurement variation prevent treating it as an isolated MCU consumption.
+
+### Input-voltage observations, System ON idle
+
+PPK2 connected to the board power input. Each displayed stable window was
+10 s after a power cycle; these are single-run observations, not voltage
+rating or regulator-fault conclusions.
+
+| Input | Average input current | Input power | Observed pattern |
+| --- | --- | --- | --- |
+| 3.3 V | about 1.67 mA | about 5.5 mW | 1 s pulses, elevated floor |
+| 3.4 V | 18.18 mA | about 61.8 mW | Sustained activity; diagnostic stage not read |
+| 3.5 V | about 532.5 uA | 1.86 mW | Narrow approximately 1 s pulses |
+| 3.7 V | 528.80 uA | 1.96 mW | Narrow approximately 1 s pulses |
+| 3.8 V | about 529 uA | 2.01 mW | Narrow approximately 1 s pulses |
+
+The nonmonotonic 3.3/3.4 V behavior requires repeated runs and passive stage
+checks before attributing failure to input voltage. Board rail measurements
+are needed to distinguish supply behavior from SDK/association/quiesce state.

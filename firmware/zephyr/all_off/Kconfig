@@ -1,2 +1,0 @@
-mainmenu "EZ-DEV54 all-off power baseline"
-source "Kconfig.zephyr"
